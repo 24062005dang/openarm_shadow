@@ -2,6 +2,10 @@
 
 Teleop OpenArm v1.0 bằng camera 2D: robot bắt chước dáng tay người (shadowing).
 
+Repo gồm hai phần: **code** chạy được (mô phỏng + OpenArm thật qua CAN-FD) và **tài liệu** nhóm đã tổng hợp
+(phân tích đề tài, thông số OpenArm v1.0, bring-up, phân tích 5 repo, bản dịch 2 bài báo, tài liệu tham khảo).
+Bắt đầu từ [`docs/README.md`](docs/README.md).
+
 ```
 Webcam / điện thoại ──► MediaPipe Pose + Hand ──► khung thân người ──► retarget kiểu SEW-Mimic ──► lọc từng khớp
                                                                                   │
@@ -76,7 +80,7 @@ Dùng điện thoại làm camera: cài app phát luồng video (vd. DroidCam, I
   hợp với động tác biểu diễn, chưa hợp gắp chính xác.
 - Nhiều nghiệm → chọn nghiệm trong giới hạn khớp và gần tư thế trước nhất.
 
-Chi tiết và nguồn: `docs/DESIGN.md`.
+Chi tiết và nguồn: `docs/DESIGN.md`, `docs/05_diem_moi_2_bai_bao.md`.
 
 ## Cấu trúc
 
@@ -90,5 +94,8 @@ scripts/check_kinematics.py  kiểm tra động học + retarget
 scripts/extract_kinematics.py sinh lại data JSON từ URDF
 tools/bringup/               script bật CAN, đọc khớp, lắc J7 (bring-up robot)
 tests/                       pytest
-docs/SAFETY.md, docs/DESIGN.md
+docs/README.md               mục lục tài liệu + lộ trình
+docs/01..07_*.md             phân tích đề tài, OpenArm v1.0, bring-up, dữ liệu, 2 bài báo, tham khảo
+docs/SAFETY.md, DESIGN.md    checklist an toàn, thiết kế code
+docs/research/               phân tích 5 repo, bản dịch SEW-Mimic và Hand Shadowing
 ```
