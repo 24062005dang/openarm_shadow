@@ -104,7 +104,19 @@ class SafetyGate:
         if self.col_on:
             d_new, d_cur = self.min_arm_distance(new), self.min_arm_distance(self.cmd)
             if d_new < self.col_margin and d_new < d_cur:
-                self.status = f"hold (sắp va chạm, cách {d_new * 100:.1f} cm)"
+                # Bước đầy đủ làm hai tay xích lại quá gần. Không đứng im cả tay (dễ bị kẹt ở gần vùng va chạm),
+                # mà chỉ cho đi từng khớp nào không làm khoảng cách giảm xuống dưới ngưỡng.
+                part, d_part, moved = {k: v.copy() for k, v in self.cmd.items()}, d_cur, False
+                for s in self.sides:
+                    for i in np.flatnonzero(new[s] != part[s]):
+                        trial = {k: v.copy() for k, v in part.items()}
+                        trial[s][i] = new[s][i]
+                        d_t = d_part if i == 7 else self.min_arm_distance(trial)   # kẹp không ảnh hưởng
+                        if d_t >= self.col_margin or d_t >= d_part:
+                            part, d_part, moved = trial, d_t, moved or i < 7
+                self.cmd = part
+                self.status = (f"tránh va chạm: chỉ đi khớp an toàn, cách {d_part * 100:.1f} cm" if moved
+                               else f"hold (sắp va chạm, cách {d_new * 100:.1f} cm)")
                 return self.cmd
         self.cmd = new
         self.status = "follow" if ramp >= 1.0 else f"engage {ramp * 100:.0f}%"

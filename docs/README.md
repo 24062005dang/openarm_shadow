@@ -31,7 +31,7 @@ Tài liệu nghiên cứu gốc:
 | --- | --- | --- |
 | 1 | Bring-up CAN, đọc khớp, lắc J7 | Có script; CAN đã chạy với taichi_player (WSL2), chưa chạy script này trên Ubuntu native |
 | 2 | Kiểm tra quy ước góc URDF ↔ motor (SAFETY.md bước 3) | J1–J4 đã khớp (đo 25/09); J5–J7 chưa |
-| 3 | Chạy `scripts/shadow.py` mô phỏng với webcam thật | Chưa làm (mới test bằng dữ liệu giả lập) |
+| 3 | Mô phỏng: `scripts/demo_sim.py` (không camera), rồi `scripts/shadow.py` với webcam thật | demo_sim chạy được; webcam thật chưa thử |
 | 4 | Chạy thật tay phải, J1–J4, biên độ nhỏ | Chưa làm |
 | 5 | Thêm J5–J7, kẹp; bật bù trọng lực | Code có, tắt mặc định |
 | 6 | Hai tay, chế độ gương | Code có |

@@ -1,6 +1,8 @@
 """Vẽ bằng OpenCV: khung xương người trên ảnh camera + hình que robot (nhìn trước và nhìn ngang)."""
 from __future__ import annotations
 
+import unicodedata
+
 import cv2
 import numpy as np
 
@@ -9,6 +11,13 @@ HAND_EDGES = [(0, 1), (1, 2), (2, 3), (3, 4), (0, 5), (5, 6), (6, 7), (7, 8), (5
               (10, 11), (11, 12), (9, 13), (13, 14), (14, 15), (15, 16), (13, 17), (0, 17),
               (17, 18), (18, 19), (19, 20)]
 COL = {"right": (255, 140, 0), "left": (0, 140, 255)}   # BGR: phải = xanh dương, trái = cam
+
+
+def ascii_text(s: str) -> str:
+    """cv2.putText chỉ vẽ được ASCII: bỏ dấu tiếng Việt (vd trạng thái SafetyGate) để không hiện '???'."""
+    s = s.replace("đ", "d").replace("Đ", "D")
+    s = "".join(c for c in unicodedata.normalize("NFD", s) if not unicodedata.combining(c))
+    return s.encode("ascii", "replace").decode()
 
 
 def draw_human(img, frame):
@@ -31,13 +40,14 @@ def draw_robot(kins, q: dict, size=(480, 480), q_target: dict | None = None, tit
     W, H = size
     canvas = np.full((H, W, 3), 245, np.uint8)
     half = W // 2
-    scale = H / 1.0          # 1 m = chiều cao ảnh
-    z0 = H * 0.08            # z = 0.75 m nằm gần mép trên
+    # Tầm với mỗi tay ~0.55 m quanh vai (vai ở y = ±0.15, z = 0.7): mỗi hình chiếu phải chứa y trong ±0.75 m,
+    # z trong 0.1..1.3 m, để tay dang ngang hoặc giơ lên đầu không bị cắt.
+    scale = min(half / 1.5, H / 1.4)
 
     def proj(p, view):
-        horiz = p[1] if view == 0 else p[0]
+        horiz = p[1] if view == 0 else p[0]     # nhìn từ phía trước robot: tay phải robot ở bên trái ảnh
         cx = half // 2 + view * half
-        return int(cx + horiz * scale * 0.9), int(z0 + (0.75 - p[2]) * scale)
+        return int(cx + horiz * scale), int(H * 0.45 + (0.7 - p[2]) * scale)
 
     for view in (0, 1):
         cv2.putText(canvas, "truoc" if view == 0 else "ben phai", (view * half + 8, H - 10),
@@ -54,13 +64,14 @@ def draw_robot(kins, q: dict, size=(480, 480), q_target: dict | None = None, tit
                     cv2.circle(canvas, proj(p, view), 4 if thick > 1 else 2, col, -1)
     cv2.line(canvas, (half, 0), (half, H), (200, 200, 200), 1)
     if title:
-        cv2.putText(canvas, title, (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (40, 40, 40), 1)
+        cv2.putText(canvas, ascii_text(title), (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (40, 40, 40), 1)
     return canvas
 
 
 def put_lines(img, lines, org=(10, 24), color=(255, 255, 255)):
     x, y = org
     for ln in lines:
+        ln = ascii_text(ln)
         cv2.putText(img, ln, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 3)
         cv2.putText(img, ln, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 1)
         y += 22

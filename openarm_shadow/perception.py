@@ -72,6 +72,11 @@ def body_frame(W, vis, min_hip_vis=0.5):
 
 class Perception:
     def __init__(self, pose_model, hand_model, num_hands=2, min_conf=0.5):
+        from pathlib import Path
+        missing = [str(m) for m in (pose_model, hand_model) if not Path(m).is_file()]
+        if missing:
+            raise SystemExit("Chưa có model MediaPipe: " + ", ".join(missing) +
+                             "\nChạy: bash scripts/download_models.sh")
         import mediapipe as mp
         from mediapipe.tasks import python as mpt
         from mediapipe.tasks.python import vision

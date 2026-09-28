@@ -33,7 +33,8 @@ lọc số đọc rác.
 
 - Đã kiểm tra (trên máy không có camera/robot): động học, retarget (thử ngược 500 tư thế, sai lệch < 1e-10°),
   bộ lọc, SafetyGate, luồng chạy sim với dữ liệu người giả lập, backend CAN với `openarm_can` giả lập.
-  `pytest` 27/27 đạt (gồm test lọc số đọc rác của backend CAN).
+  `pytest` 28/28 đạt (gồm test lọc số đọc rác của backend CAN).
+- `scripts/demo_sim.py` chạy trọn luồng pipeline → SafetyGate → robot mô phỏng với người giả lập (đã chạy được).
 - **Chưa chạy** với webcam thật và **chưa chạy trên OpenArm thật**. Làm theo `docs/SAFETY.md` trước khi bật motor.
 - Quy ước góc URDF ↔ góc motor đang đặt là đồng nhất. **Phải kiểm tra** (SAFETY.md bước 3).
 
@@ -45,7 +46,7 @@ python3 -m venv --system-site-packages .venv   # system-site để thấy python
 source .venv/bin/activate
 pip install -r requirements.txt
 bash scripts/download_models.sh                # model MediaPipe vào models/
-python -m pytest -q                            # 27 test phải đạt
+python -m pytest -q                            # 28 test phải đạt
 python scripts/check_kinematics.py             # in trục khớp, thử ngược retarget
 ```
 
@@ -54,7 +55,10 @@ Robot thật cần thêm `openarm_can` (xem `tools/bringup/`): `sudo apt install
 ## Chạy
 
 ```bash
-# 1) Mô phỏng: chỉ camera + hình que robot. Luôn chạy bước này trước.
+# 0) Mô phỏng không cần camera, model hay robot: người giả lập làm vài động tác
+python scripts/demo_sim.py                      # q/Esc để thoát; --out demo.mp4 để ghi video
+
+# 1) Mô phỏng với webcam: camera + hình que robot. Luôn chạy bước này trước robot thật.
 python scripts/shadow.py
 python scripts/shadow.py --mode mirror          # đứng đối diện robot, như soi gương
 python scripts/shadow.py --arms right           # chỉ điều khiển tay phải
@@ -91,6 +95,7 @@ Chi tiết và nguồn: `docs/DESIGN.md`, `docs/05_diem_moi_2_bai_bao.md`.
 ```
 config/default.yaml          mọi tham số (ghi đè bằng --config file_của_bạn.yaml)
 openarm_shadow/              thư viện
+scripts/demo_sim.py          mô phỏng không cần camera (người giả lập)
 scripts/shadow.py            chạy teleop (sim / openarm)
 scripts/offline_retarget.py  video -> .npz
 scripts/replay_npz.py        phát .npz qua SafetyGate

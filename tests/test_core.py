@@ -200,3 +200,20 @@ def test_gate_blocks_arm_collision():
         g.set_target(tgt, t)
         g.step(0.01, t)
     assert g.min_arm_distance(g.cmd) >= g.col_margin - 1e-6 or "va chạm" in g.status
+
+
+def test_gate_not_stuck_near_collision():
+    """Đang sát ngưỡng va chạm, mục tiêu về tư thế nghỉ: gate phải thoát ra được, không đứng im mãi."""
+    g = make_gate()
+    M = np.array([-1, -1, -1, 1, -1, -1, -1, 1])
+    near = np.append(np.deg2rad([69, -5, -15, 109, 0, 0, 0]), 0.5)
+    g.reset({"right": near, "left": M * near})
+    g.engage(-10)
+    rest = {s: np.zeros(8) for s in g.sides}
+    t = 0.0
+    for _ in range(400):
+        t += 0.01
+        g.set_target(rest, t)
+        g.step(0.01, t)
+    assert np.abs(g.cmd["right"][:7]).max() < np.deg2rad(2)
+    assert g.min_arm_distance(g.cmd) >= g.col_margin - 1e-6
