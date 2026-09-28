@@ -38,6 +38,19 @@ Cột cuối là kết quả đo tay khi làm bài múa Thái Cực (taichi_play
 nên `sign = 1`, `offset = 0` là đúng cho J1–J4. Vẫn đọc lại một lần trên Ubuntu native, vì thứ tự can0/can1 có thể đổi
 khi cắm lại USB. J5–J7 phải đo trước khi dùng cổ tay: khớp nào ngược thì đặt sign = -1, lệch 0 thì đặt offset.
 
+**Zero motor sai.** Tay thả xuôi mà `read_joints.py` đọc ra góc lớn (vd ngày 28/09 tay trái đọc J1 ≈ 178°,
+J2 ≈ 181°, J5 ≈ −65°, kẹp ≈ 54°) nghĩa là zero của motor sai, không phải lệch vài độ. Khi đó `shadow.py` sẽ báo
+"CẢNH BÁO: góc motor nằm ngoài giới hạn" và **từ chối bật motor**. Không chạy bất kỳ chương trình nào bật motor tay đó
+(kể cả taichi_player) cho tới khi hiệu chuẩn lại zero bằng công cụ chính thức và kiểm tra lại sau khi tắt/bật nguồn:
+
+```bash
+openarm-can-zero-position-calibration --canport can1 --arm-side left_arm --robot-version v1
+```
+
+Công cụ này bật motor và đẩy từng khớp vào giới hạn cơ khí (tay quét rộng, cả phía sau): dọn trống quanh tay ~1 m,
+có người cầm E-stop, báo nhóm trước vì nó ghi vào motor. Lệch nhỏ (vài độ) thì không cần hiệu chuẩn lại: đặt
+`robot.urdf_to_motor.offset_deg` = góc đọc được khi tay đúng tư thế 0.
+
 ## 4. Lần chạy thật đầu tiên
 ```bash
 python scripts/shadow.py --robot openarm --arms right --config config/first_real.yaml

@@ -181,7 +181,26 @@ class OpenArmCANRobot:
             a.drain()
             self.q_connect[s] = a.read_consistent().copy()
             a.check_fresh()
+        bad = self.out_of_range()
+        if bad:
+            print("CẢNH BÁO: góc motor nằm ngoài giới hạn, zero của motor có thể sai -> KHÔNG được bật motor:")
+            for line in bad:
+                print("   ", line)
         return self.read()
+
+    def out_of_range(self, tol_deg=5.0):
+        """Các khớp có góc motor đo được nằm ngoài robot.motor_limits_deg (± tol).
+
+        Tay thả xuôi mà đọc ra vd J1 = 178° nghĩa là zero của motor sai (chưa hiệu chuẩn hoặc hiệu chuẩn bị mất).
+        Nếu vẫn bật motor, lệnh đầu tiên bị kẹp vào giới hạn và tay sẽ quay một góc rất lớn."""
+        tol = np.deg2rad(tol_deg)
+        out = []
+        for s, a in self.arms.items():
+            q = a.q_motor
+            for i in np.flatnonzero((q < a.mlo - tol) | (q > a.mhi + tol)):
+                out.append(f"{s} J{i + 1}: {np.rad2deg(q[i]):7.1f}° (giới hạn motor "
+                           f"{np.rad2deg(a.mlo[i]):.0f}..{np.rad2deg(a.mhi[i]):.0f}°)")
+        return out
 
     def read(self):
         return {s: a.state() for s, a in self.arms.items()}
@@ -196,6 +215,10 @@ class OpenArmCANRobot:
     def enable(self):
         """Bật motor. Từ chối nếu tư thế đã khác lúc connect() (lệnh đầu tiên = tư thế lúc connect)."""
         tol = np.deg2rad(float(self.rcfg.get("read_filter", {}).get("enable_pose_tol_deg", 3.0)))
+        bad = self.out_of_range()
+        if bad:
+            raise RobotFault("Không bật motor: góc đo nằm ngoài giới hạn (zero motor sai?): " + "; ".join(bad) +
+                             ". Hiệu chuẩn lại zero trước (docs/SAFETY.md).")
         for s, a in self.arms.items():
             q = a.read_consistent()
             d = np.abs(q - self.q_connect.get(s, q))

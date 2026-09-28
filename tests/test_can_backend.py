@@ -166,3 +166,15 @@ def test_poll_reads_without_enabling(robot):
     assert r.poll()["right"][0] == pytest.approx(0.1)
     r.poll()
     assert r.poll()["right"][0] == pytest.approx(0.6)   # ...đọc giống nhau 3 lần thì chấp nhận
+
+
+def test_enable_refuses_when_zero_is_wrong(robot):
+    """Tay thả xuôi nhưng đọc J1 = 178° (zero motor sai, như tay trái ngày 28/09): không được bật motor."""
+    from openarm_shadow.robot.openarm_can_robot import RobotFault
+    r, hw = robot
+    hw.a.ms[0].q = np.deg2rad(178.2)
+    r.connect()
+    assert r.out_of_range()
+    with pytest.raises(RobotFault):
+        r.enable()
+    assert not hw.enabled
