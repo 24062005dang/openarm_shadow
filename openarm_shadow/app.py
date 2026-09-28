@@ -60,19 +60,25 @@ def park(robot, gate, rest, vel_deg_s, timeout=25.0):
     saved = gate.max_vel.copy()
     gate.max_vel = np.full(7, np.deg2rad(vel_deg_s))
     gate.engage(time.monotonic() - 10)     # bỏ qua pha tăng tốc
-    t0 = t_prev = time.monotonic()
-    while time.monotonic() - t0 < timeout:
-        now = time.monotonic()
-        tgt = {s: np.append(rest, np.nan) for s in gate.sides}
-        gate.set_target(tgt, now)
-        cmd = gate.step(now - t_prev, now)
-        t_prev = now
-        robot.send(cmd)
-        if max(np.max(np.abs(cmd[s][:7] - rest)) for s in gate.sides) < np.deg2rad(1.0):
-            break
-        time.sleep(0.01)
-    gate.max_vel = saved
-    gate.disengage()
+    if hasattr(robot, "returning"):
+        robot.returning = True             # đang về: số đọc rác chỉ bị bỏ qua, không dừng giữa chừng
+    try:
+        t0 = t_prev = time.monotonic()
+        while time.monotonic() - t0 < timeout:
+            now = time.monotonic()
+            tgt = {s: np.append(rest, np.nan) for s in gate.sides}
+            gate.set_target(tgt, now)
+            cmd = gate.step(now - t_prev, now)
+            t_prev = now
+            robot.send(cmd)
+            if max(np.max(np.abs(cmd[s][:7] - rest)) for s in gate.sides) < np.deg2rad(1.0):
+                break
+            time.sleep(0.01)
+    finally:
+        if hasattr(robot, "returning"):
+            robot.returning = False
+        gate.max_vel = saved
+        gate.disengage()
 
 
 def run(cfg, source, robot_kind="sim", record=None, show=True):

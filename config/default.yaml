@@ -53,6 +53,13 @@ robot:
   control_hz: 100
   gain_ramp_s: 1.0
   feedback_timeout_s: 0.1
+  # Lọc số đọc rác (phản hồi 0x55 của Damiao bị đọc như gói trạng thái, xem openarm_can_robot.py)
+  read_filter:
+    max_abs_rad: 3.7          # |q| lớn hơn -> rác
+    max_jump_rad: 0.35        # nhảy hơn mức này trong 1 lần đọc (10 ms) -> rác
+    bad_hold_s: 0.2           # một khớp đọc hỏng liên tục lâu hơn -> dừng (RobotFault)
+    consistent_tol_deg: 1.0   # 2 lần đọc liên tiếp trước khi enable phải lệch ít hơn
+    enable_pose_tol_deg: 3.0  # tư thế lúc enable phải gần tư thế lúc connect
   # Gain MIT chính thức v1.0 (openarm_description .../openarm_v1.0/config/arm/control_gains.yaml)
   kp: [70, 70, 70, 60, 10, 10, 10]
   kd: [2.75, 2.5, 2.0, 2.0, 0.7, 0.6, 0.5]
