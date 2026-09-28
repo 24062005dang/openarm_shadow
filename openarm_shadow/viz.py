@@ -22,21 +22,29 @@ def ascii_text(s: str) -> str:
 
 def draw_human(img, frame):
     h, w = img.shape[:2]
+    th = max(2, w // 250)           # nét dày theo kích thước ảnh (1280 px -> 5 px)
     if frame.pose_2d is not None:
         P = frame.pose_2d
         for a, b in POSE_EDGES:
             if min(P[a, 2], P[b, 2]) > 0.3:
                 cv2.line(img, (int(P[a, 0] * w), int(P[a, 1] * h)), (int(P[b, 0] * w), int(P[b, 1] * h)),
-                         (0, 220, 0), 3)
+                         (0, 220, 0), th)
+        for i in (11, 12, 13, 14, 15, 16):
+            if P[i, 2] > 0.3:
+                cv2.circle(img, (int(P[i, 0] * w), int(P[i, 1] * h)), th + 3, (0, 255, 255), -1)
     for h2, side in frame.hands_2d:
         c = COL.get(side, (160, 160, 160))
         for a, b in HAND_EDGES:
-            cv2.line(img, (int(h2[a, 0] * w), int(h2[a, 1] * h)), (int(h2[b, 0] * w), int(h2[b, 1] * h)), c, 2)
+            cv2.line(img, (int(h2[a, 0] * w), int(h2[a, 1] * h)), (int(h2[b, 0] * w), int(h2[b, 1] * h)), c,
+                     max(1, th - 2))
     return img
 
 
-def draw_robot(kins, q: dict, size=(480, 480), q_target: dict | None = None, title=""):
-    """Hai hình chiếu: trái = nhìn từ phía trước robot (ngang = y), phải = nhìn từ bên phải (ngang = x)."""
+def draw_robot(kins, q: dict, size=(480, 480), q_target: dict | None = None, title="",
+               q_meas: dict | None = None):
+    """Hai hình chiếu: trái = nhìn từ phía trước robot (ngang = y), phải = nhìn từ bên phải (ngang = x).
+
+    q: lệnh (nét đậm màu) · q_target: mục tiêu (nét mảnh xám) · q_meas: góc đo từ robot thật (nét xanh lá)."""
     W, H = size
     canvas = np.full((H, W, 3), 245, np.uint8)
     half = W // 2
@@ -53,7 +61,7 @@ def draw_robot(kins, q: dict, size=(480, 480), q_target: dict | None = None, tit
         cv2.putText(canvas, "truoc" if view == 0 else "ben phai", (view * half + 8, H - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (90, 90, 90), 1)
         for s, kin in kins.items():
-            for qq, thick, col in ((q_target, 1, (180, 180, 180)), (q, 3, COL[s])):
+            for qq, thick, col in ((q_target, 1, (180, 180, 180)), (q, 3, COL[s]), (q_meas, 2, (0, 170, 0))):
                 if qq is None or s not in qq or not np.all(np.isfinite(qq[s][:7])):
                     continue
                 P = kin.joint_positions(qq[s][:7])

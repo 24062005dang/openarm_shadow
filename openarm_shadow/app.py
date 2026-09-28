@@ -81,14 +81,25 @@ def park(robot, gate, rest, vel_deg_s, timeout=25.0):
         gate.disengage()
 
 
-def run(cfg, source, robot_kind="sim", record=None, show=True):
+def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
+    """dry_run (chỉ với robot_kind="openarm"): đọc góc robot thật, KHÔNG bật motor. Lệnh đi vào robot mô phỏng;
+    hình vẽ có thêm nét xanh lá = tư thế đo từ robot thật. Dùng để kiểm tra can0/can1 và chiều từng khớp
+    bằng cách cầm tay robot di chuyển, trước khi chạy thật."""
     cap = open_source(source)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, cfg["camera"]["width"])
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, cfg["camera"]["height"])
     perc = Perception(cfg["models"]["pose"], cfg["models"]["hand"], min_conf=cfg["models"]["min_conf"])
     pipe = ShadowPipeline(cfg)
-    robot = make_robot(robot_kind, cfg, pipe.robot_sides)
-    q_meas = robot.connect()
+    real = None
+    if robot_kind == "openarm" and dry_run:
+        real = make_robot("openarm", cfg, pipe.robot_sides)
+        q_meas = real.connect()
+        from .robot.sim import SimRobot
+        robot = SimRobot(pipe.robot_sides, q0=q_meas)
+        robot_kind = "sim"
+    else:
+        robot = make_robot(robot_kind, cfg, pipe.robot_sides)
+        q_meas = robot.connect()
     print("Tư thế đo được (độ, URDF):")
     for s, q in q_meas.items():
         print(f"  {s:5s}", np.round(np.rad2deg(q[:7]), 1), " kẹp", round(float(q[7]), 2))
@@ -109,6 +120,10 @@ def run(cfg, source, robot_kind="sim", record=None, show=True):
     log = {"t": [], **{f"target_{s}": [] for s in pipe.robot_sides}, **{f"cmd_{s}": [] for s in pipe.robot_sides}}
     fps_t, fps = time.monotonic(), 0.0
     msg = "SPACE: engage | c: hieu chuan tay | p: ve nghi | q: thoat"
+    if real is not None:
+        msg = "DRY RUN: motor TAT. Xanh la = robot that. " + msg
+    if show:
+        cv2.namedWindow("openarm_shadow", cv2.WINDOW_NORMAL)   # kéo giãn được cửa sổ
     try:
         while ctl.running:
             ok, frame_bgr = cap.read()
@@ -138,8 +153,17 @@ def run(cfg, source, robot_kind="sim", record=None, show=True):
                     if inf is not None:
                         lines.append(f"{s}: err u {inf.err_upper_deg:5.1f} l {inf.err_fore_deg:5.1f} "
                                      f"tay {inf.err_hand_deg:5.1f} deg" + (" [thang]" if inf.elbow_straight else ""))
+                q_real = None
+                if real is not None:
+                    q_real = real.poll()
+                    for s in pipe.robot_sides:
+                        lines.append(f"{s} that (URDF, do): " +
+                                     " ".join(f"{v:5.0f}" for v in np.rad2deg(q_real[s][:7])))
+                elif robot_kind == "openarm":
+                    q_real = robot.read()
                 put_lines(cam, lines)
-                rob = draw_robot(pipe.kins, cmd, q_target=targets, title="lenh (dam) / muc tieu (mo)")
+                rob = draw_robot(pipe.kins, cmd, q_target=targets, q_meas=q_real,
+                                 title="lenh (dam) / muc tieu (mo)" + (" / do that (xanh la)" if q_real else ""))
                 cv2.imshow("openarm_shadow", side_by_side(cam, rob))
                 k = cv2.waitKey(1) & 0xFF
                 if k == ord(" "):
@@ -173,6 +197,8 @@ def run(cfg, source, robot_kind="sim", record=None, show=True):
                 park(robot, gate, rest, cfg["robot"]["park_vel_deg_s"])
         finally:
             robot.close()
+            if real is not None:
+                real.close()
             perc.close()
             cap.release()
             cv2.destroyAllWindows()

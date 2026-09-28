@@ -14,7 +14,16 @@ mỗi tay và lắc J7 thành công.
 
 ## 3. Quy ước góc URDF ↔ motor (bắt buộc)
 Code tính góc theo URDF v1.0. Góc motor = `sign · góc URDF + offset` (config `robot.urdf_to_motor`, mặc định sign = 1, offset = 0).
-Kiểm tra bằng `tools/bringup/read_joints.py` (motor tắt, cầm tay robot):
+Cách dễ nhất: chạy **dry-run** (motor TẮT, chỉ đọc góc), cầm tay robot di chuyển từng khớp và xem hình que
+**xanh lá** trên màn hình có đi đúng như tay robot thật không:
+
+```bash
+python scripts/shadow.py --robot openarm --dry-run
+```
+
+Hình xanh lá phải đúng tay (tay phải robot ở bên trái hình "truoc", vì hình nhìn từ phía trước robot) và đúng chiều.
+Sai tay → đổi `robot.interfaces` (can0/can1). Sai chiều một khớp → đặt sign = -1 cho khớp đó. Cũng có thể đọc số
+bằng `tools/bringup/read_joints.py`. Bảng chiều đúng:
 
 | Động tác trên robot | Góc URDF phải | Góc URDF trái | Nhóm đo ngày 25/09 |
 | --- | --- | --- | --- |
@@ -31,12 +40,18 @@ khi cắm lại USB. J5–J7 phải đo trước khi dùng cổ tay: khớp nào
 
 ## 4. Lần chạy thật đầu tiên
 ```bash
-python scripts/shadow.py --robot openarm --arms right
+python scripts/shadow.py --robot openarm --arms right --config config/first_real.yaml
 ```
+`config/first_real.yaml`: chỉ J1–J4, J5–J7 khoá ở 0; J1 ≤ 45°, J2 0…45°, J3 ±30°, J4 0…90°; tốc độ tối đa 20°/s;
+engage chậm 3 s.
 - Tay robot thả xuôi trước khi gõ `yes`. Lúc bật, gain tăng dần trong 1 s, lệnh bắt đầu đúng tư thế đo được.
-- Bấm SPACE để engage: tốc độ tăng dần trong 1.5 s, tối đa 45°/s ở vai.
-- Làm chậm, biên độ nhỏ. Hạ `safety.max_vel_deg_s` nếu cần.
-- Giới hạn khớp mềm mặc định = giới hạn LeRobot (J1 ±75°, J2 phải −9…90°): tay không giơ quá cao được. Nới dần sau.
+- Chưa bấm SPACE thì robot giữ nguyên tư thế. Bấm SPACE để engage; bấm lại để nhả (robot đứng yên tại chỗ).
+- Người điều khiển đứng yên trong khung hình, tay thả xuôi, rồi mới bấm SPACE. Làm chậm từng động tác:
+  nâng tay ra trước → hạ → dang ngang → hạ → gập khuỷu → duỗi.
+- Hình que xanh lá (đo từ robot) phải bám sát hình màu (lệnh). Lệch nhiều hoặc giật: nhả SPACE / E-stop.
+- `q` = về tư thế nghỉ rồi tắt motor. Không rút nguồn khi tay đang giơ.
+- Ổn rồi mới: tay trái (`--arms left`), rồi hai tay, rồi nới giới hạn (quay về config/default.yaml), rồi J5–J7 sau khi
+  đã kiểm tra chiều bằng dry-run.
 
 ## 5. Những gì CHƯA có
 - Bù trọng lực tắt mặc định. Không bù, với kp = 70 tay giơ ngang có thể võng khoảng 8° (ước tính từ mô men

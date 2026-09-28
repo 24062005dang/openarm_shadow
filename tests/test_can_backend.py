@@ -155,3 +155,14 @@ def test_enable_refuses_if_pose_changed(robot):
     with pytest.raises(RobotFault):
         r.enable()
     assert not hw.enabled
+
+
+def test_poll_reads_without_enabling(robot):
+    r, hw = robot
+    r.connect()
+    hw.a.ms[0].q = 0.1                     # người cầm tay robot nâng J1 lên (motor tắt)
+    assert r.poll()["right"][0] == pytest.approx(0.1) and not hw.enabled
+    hw.a.ms[0].q = 0.6                     # nhảy lớn giữa hai lần đọc: lần đầu bị nghi là rác...
+    assert r.poll()["right"][0] == pytest.approx(0.1)
+    r.poll()
+    assert r.poll()["right"][0] == pytest.approx(0.6)   # ...đọc giống nhau 3 lần thì chấp nhận

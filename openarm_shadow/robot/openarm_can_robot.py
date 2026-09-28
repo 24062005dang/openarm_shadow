@@ -60,6 +60,8 @@ class _Arm:
         self.q_raw = np.full(7, np.nan)        # giá trị đọc thô gần nhất
         self.bad_since = np.full(7, np.nan)    # thời điểm khớp bắt đầu đọc hỏng liên tục
         self.n_rejected = 0                    # số lần bỏ số đọc rác (để in khi kết thúc)
+        self.cand = np.full(7, np.nan)         # giá trị "nhảy" đang chờ xác nhận
+        self.cand_n = np.zeros(7, int)
         self.g_motor = np.nan
         self.drain()
 
@@ -93,10 +95,19 @@ class _Arm:
         """Đọc góc và lọc số đọc rác. q_motor chỉ nhận giá trị hợp lệ; khớp hỏng giữ giá trị tốt gần nhất."""
         now = time.monotonic() if now is None else now
         raw, g = self._read_raw()
-        ok = np.isfinite(raw) & (np.abs(raw) <= self.max_abs)
+        sane = np.isfinite(raw) & (np.abs(raw) <= self.max_abs)
         have = np.isfinite(self.q_motor)
         jump = np.abs(raw - np.where(have, self.q_motor, raw))
-        ok &= ~have | (jump <= self.max_jump)
+        ok = sane & (~have | (jump <= self.max_jump))
+        # Số rác xuất hiện lẻ tẻ; một bước nhảy đọc được giống nhau 3 lần liên tiếp là chuyển động thật
+        # (vd tay bị cầm di chuyển giữa hai lần đọc thưa ở --dry-run) -> chấp nhận.
+        jumped = sane & ~ok
+        same = jumped & (np.abs(raw - np.nan_to_num(self.cand, nan=np.inf)) <= 0.05)
+        self.cand_n = np.where(same, self.cand_n + 1, np.where(jumped, 1, 0))
+        self.cand = np.where(jumped, raw, np.nan)
+        confirmed = self.cand_n >= 3
+        ok |= confirmed
+        self.cand_n[confirmed] = 0
         self.n_rejected += int(np.count_nonzero(~ok & np.isfinite(raw)))
         self.q_raw = raw
         self.q_motor = np.where(ok, raw, self.q_motor)
@@ -174,6 +185,13 @@ class OpenArmCANRobot:
 
     def read(self):
         return {s: a.state() for s, a in self.arms.items()}
+
+    def poll(self):
+        """Đọc lại góc khi motor đang TẮT (chế độ --dry-run). Không tạo mô-men."""
+        for a in self.arms.values():
+            a.refresh()
+            a.check_fresh()
+        return self.read()
 
     def enable(self):
         """Bật motor. Từ chối nếu tư thế đã khác lúc connect() (lệnh đầu tiên = tư thế lúc connect)."""

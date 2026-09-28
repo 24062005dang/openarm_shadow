@@ -3,7 +3,8 @@
 
     python scripts/shadow.py                      # webcam 0, robot mô phỏng (an toàn, nên chạy trước)
     python scripts/shadow.py --source video.mp4   # chạy trên video quay sẵn
-    python scripts/shadow.py --robot openarm      # OpenArm thật (đọc docs/SAFETY.md trước)
+    python scripts/shadow.py --robot openarm --dry-run   # đọc robot thật, motor TẮT (kiểm tra chiều khớp)
+    python scripts/shadow.py --robot openarm --config config/first_real.yaml --arms right   # lần chạy thật đầu
     python scripts/shadow.py --config my.yaml --record run1.npz
 """
 import argparse
@@ -24,6 +25,7 @@ def main():
     ap.add_argument("--mode", choices=["direct", "mirror"], default=None)
     ap.add_argument("--arms", default=None, help="vd: right hoặc right,left")
     ap.add_argument("--record", default=None, help="lưu mục tiêu + lệnh ra file .npz")
+    ap.add_argument("--dry-run", action="store_true", help="với --robot openarm: chỉ đọc góc, không bật motor")
     args = ap.parse_args()
     cfg = load_config(args.config)
     if args.mode:
@@ -31,7 +33,9 @@ def main():
     if args.arms:
         cfg["mapping"]["robot_arms"] = args.arms.split(",")
     src = args.source if args.source is not None else cfg["camera"]["index"]
-    run(cfg, src, args.robot, record=args.record)
+    if args.dry_run and args.robot != "openarm":
+        raise SystemExit("--dry-run chỉ dùng cùng --robot openarm")
+    run(cfg, src, args.robot, record=args.record, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

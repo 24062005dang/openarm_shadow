@@ -33,9 +33,10 @@ lọc số đọc rác.
 
 - Đã kiểm tra (trên máy không có camera/robot): động học, retarget (thử ngược 500 tư thế, sai lệch < 1e-10°),
   bộ lọc, SafetyGate, luồng chạy sim với dữ liệu người giả lập, backend CAN với `openarm_can` giả lập.
-  `pytest` 28/28 đạt (gồm test lọc số đọc rác của backend CAN).
+  `pytest` 29/29 đạt (gồm test lọc số đọc rác của backend CAN).
 - `scripts/demo_sim.py` chạy trọn luồng pipeline → SafetyGate → robot mô phỏng với người giả lập (đã chạy được).
-- **Chưa chạy** với webcam thật và **chưa chạy trên OpenArm thật**. Làm theo `docs/SAFETY.md` trước khi bật motor.
+- Đã chạy với webcam thật trên laptop của nhóm (mô phỏng, 28/09): nhận diện và bám theo tay.
+- **Chưa chạy trên OpenArm thật**. Làm theo `docs/SAFETY.md` (dry-run trước, rồi `config/first_real.yaml`).
 - Quy ước góc URDF ↔ góc motor đang đặt là đồng nhất. **Phải kiểm tra** (SAFETY.md bước 3).
 
 ## Cài đặt (Ubuntu 24.04, Python 3.12, không cần GPU)
@@ -46,7 +47,7 @@ python3 -m venv --system-site-packages .venv   # system-site để thấy python
 source .venv/bin/activate
 pip install -r requirements.txt
 bash scripts/download_models.sh                # model MediaPipe vào models/
-python -m pytest -q                            # 28 test phải đạt
+python -m pytest -q                            # 29 test phải đạt
 python scripts/check_kinematics.py             # in trục khớp, thử ngược retarget
 ```
 
@@ -67,8 +68,9 @@ python scripts/shadow.py --arms right           # chỉ điều khiển tay ph�
 python scripts/offline_retarget.py demo.mp4 -o demo.npz --show
 python scripts/replay_npz.py demo.npz            # xem lại trên robot mô phỏng
 
-# 3) OpenArm thật (sau khi làm xong docs/SAFETY.md)
-python scripts/shadow.py --robot openarm --arms right
+# 3) OpenArm thật (làm theo docs/SAFETY.md)
+python scripts/shadow.py --robot openarm --dry-run                  # motor TẮT: chỉ đọc, kiểm tra chiều khớp
+python scripts/shadow.py --robot openarm --arms right --config config/first_real.yaml   # lần đầu: J1–J4, chậm
 ```
 
 Phím khi chạy: `SPACE` engage / nhả (ly hợp) · `c` hiệu chuẩn hướng bàn tay (đứng tay thả xuôi, lòng bàn
