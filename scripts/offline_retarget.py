@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Video quay sẵn -> quỹ đạo góc khớp OpenArm (.npz). Dùng cho nhánh Thái Cực / thu dữ liệu IL.
+"""Video quay sẵn -> quỹ đạo góc khớp OpenArm (.npz). Dùng để thử pipeline không cần robot và thu demo cho IL.
 
-    python scripts/offline_retarget.py taichi.mp4 -o taichi_openarm.npz --show
+    python scripts/offline_retarget.py demo.mp4 -o demo.npz --show
 
 File .npz: fps, t (s), q_right/q_left (N, 8: 7 góc URDF rad + độ mở kẹp 0..1, NaN = mất tracking).
 Phát lại lên robot bằng scripts/replay_npz.py (luôn đi qua SafetyGate).

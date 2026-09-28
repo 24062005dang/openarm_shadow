@@ -15,14 +15,11 @@ phần ánh xạ sang 7 khớp là hình học. Nên để **robot chạy đư�
 | Ground truth tay/cánh tay 3D (egocentric) | EgoDex (Apple, `github.com/apple/ml-egodex`) | Có pose vai, cánh tay, cẳng tay, 25 khớp bàn tay; test set 16 GB; CC-BY-NC-ND. Góc nhìn từ đầu, hợp phương án gắn đầu hơn |
 | Dự phòng egocentric | HOT3D (Meta), MobileEgo Anywhere | |
 
-## Nhánh Thái Cực / động tác biểu diễn
+## Chế độ offline (video → quỹ đạo)
 
-- Chế độ offline: quay một người tập → `offline_retarget.py` → `.npz` → `replay_npz.py` (mô phỏng, rồi robot thật chậm `--speed 0.5`).
-- Tốt hơn nếu quay 2 camera và chạy Pose2Sim để có góc chính xác hơn.
-- Nguồn motion có sẵn (định dạng G1, cần retarget sang OpenArm): KungfuAthleteBot (Apache-2.0/MIT, có 42 thức Thái Cực),
-  CMU qua AMASS (12_04 Thái Cực; phi thương mại), LAFAN1 (CC BY-NC-ND), g1-moves. Chi tiết trong tài liệu project
-  "motion-sources" của nhóm.
-- Bài cơ bản gợi ý: Bát đoạn cẩm (động tác 1, 2, 3, 7 chỉ dùng tay, chậm), port de bras ballet (đối xứng, chậm).
+- Quay video → `offline_retarget.py` → `.npz` → `replay_npz.py` (mô phỏng trước, robot thật chậm `--speed 0.5`).
+- Dùng để thử pipeline khi chưa có robot, và để thu demo cho imitation learning.
+- Múa Thái Cực từ mocap có sẵn là hướng riêng (`taichi_player`), không làm bằng repo này.
 
 ## Imitation learning sau này
 

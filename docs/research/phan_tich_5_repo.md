@@ -239,7 +239,7 @@ Bảng này là suy luận của mình từ hướng trục. Dấu và điểm 0
 
 - **Không dùng cho teleop trực tiếp:** xử lý theo lô sau khi quay xong. Bản demo chạy mất 1–2 phút trên laptop, tinh chỉnh còn vài giây. Tác giả gợi ý dùng [Sports2D](https://github.com/davidpagnon/Sports2D) nếu cần thời gian thực với 1 camera, nhưng khi đó động tác phải nằm trong mặt phẳng dọc hoặc ngang.
 - **★ Dùng làm ground truth:** quay cùng lúc bằng điện thoại + laptop, chạy Pose2Sim offline, rồi so với góc mà pipeline MediaPipe thời gian thực của nhóm tính ra. Đây là cách đo sai số không cần hệ mocap đắt tiền.
-- **★ Dùng cho nhánh Thái Cực:** quay một người tập bằng 2 camera → `.mot` có 7 góc mỗi tay → ánh xạ theo bảng trên → phát lại trên OpenArm.
+- **★ Dùng cho động tác biểu diễn** (hướng Thái Cực là repo riêng của nhóm): quay một người tập bằng 2 camera → `.mot` có 7 góc mỗi tay → ánh xạ theo bảng trên → phát lại trên OpenArm.
 - **Nên lấy code:** calibration, triangulation có trọng số, các bộ lọc. License BSD cho phép dùng lại.
 - **Lưu ý khi quay:** tác giả khuyên 2 camera, một ở phía trước, một lệch 45°, cả hai ngang hông; tốc độ khung dưới 60 fps làm giảm độ chính xác với động tác nhanh.
 
@@ -247,31 +247,46 @@ Bảng này là suy luận của mình từ hướng trục. Dấu và điểm 0
 
 Nên lấy phần đo và lọc của repo 3, cơ chế ly hợp của repo 4, tự viết khâu ánh xạ 7 khớp cho OpenArm, và dùng Pose2Sim để đo sai số.
 
-```
- THỊ GIÁC (trình duyệt hoặc Python)                          
- ┌────────────────────┐   ┌──────────────────────┐   ┌──────────────────────────┐
- │ Camera 2D +        │──►│ Đặc trưng theo khung │──►│ Lọc One Euro + vùng chết │
- │ MediaPipe Pose/Hand│   │ thân (MakeFrame)     │   │ + độ tin cậy từng khớp   │
- │ (repo 3, repo 4)   │   │ (SEW-Mimic)          │   │ (repo 3)                 │
- └────────────────────┘   └──────────────────────┘   └────────────┬─────────────┘
-                                                                  │
- ĐIỀU KHIỂN (Python trên laptop)                                  ▼
- ┌────────────────────┐   ┌──────────────────────┐   ┌──────────────────────────┐
- │ OpenArm v1.0       │◄──│ Bridge an toàn 30 Hz │◄──│ Ánh xạ 7 khớp (tự viết,  │
- │ openarm_can CAN-FD │   │ dead-man, ly hợp,    │   │ SP1/SP2 kiểu SEW-Mimic)  │
- │                    │   │ giới hạn (repo 3, 4) │   │                          │
- └────────────────────┘   └──────────────────────┘   └──────────────────────────┘
+Sơ đồ dưới là bản **đã cài trong repo** (tên file ở dòng cuối mỗi ô):
 
- ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐
+```
+ THỊ GIÁC (Python, luồng chính, theo fps camera)
+ ┌──────────────────────┐   ┌──────────────────────┐   ┌────────────────────────────┐
+ │ Camera 2D +          │──►│ Đặc trưng khung thân │──►│ Ánh xạ 7 khớp (tự viết)    │
+ │ MediaPipe Pose/Hand  │   │ vai, khuỷu, cổ tay,  │   │ căn hướng SP1/SP2          │
+ │ (CPU, Tasks 0.10.21) │   │ hướng bàn tay        │   │ kiểu SEW-Mimic             │
+ │ perception.py        │   │ geometry.make_frame  │   │ retarget.py                │
+ └──────────────────────┘   └──────────────────────┘   └─────────────┬──────────────┘
+                                                                     ▼
+ ┌──────────────────────┐   ┌──────────────────────┐   ┌────────────────────────────┐
+ │ OpenArm v1.0         │◄──│ An toàn 100 Hz       │◄──│ Lọc từng khớp: One Euro,   │
+ │ openarm_can CAN-FD   │   │ dead-man, giới hạn   │   │ vùng chết, bỏ bước nhảy,   │
+ │ + lọc số đọc rác     │   │ vận tốc, engage mềm, │   │ giữ khớp tin cậy thấp      │
+ │ robot/openarm_can_.. │   │ chặn 2 tay va nhau   │   │ filters.py                 │
+ │ (hoặc robot/sim.py)  │   │ safety.py + app.py   │   │                            │
+ └──────────────────────┘   └──────────────────────┘   └────────────────────────────┘
+ ĐIỀU KHIỂN (Python, luồng riêng, 100 Hz)
+
+ ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐
    Offline: 2 camera → Pose2Sim (repo 5) → góc tham chiếu, so sai số
- └ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘
+   (chưa có script)
+ └ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘
 ```
 
-> Trong repo `openarm_shadow` cả phần thị giác lẫn điều khiển đều chạy bằng Python (MediaPipe Tasks trên CPU), nên không cần WebSocket; phương án trình duyệt để dành khi CPU không đủ fps.
+Khác với đề xuất ban đầu (6 ô, vẽ trong doc):
 
-Đọc theo mũi tên: hàng trên là phần thị giác, hàng dưới là phần điều khiển; ô nét đứt chạy riêng, sau khi quay xong.
+| Đề xuất ban đầu | Trong repo | Lý do |
+| --- | --- | --- |
+| MediaPipe chạy trong trình duyệt, gửi góc qua WebSocket | Python, cùng một chương trình | Đơn giản hơn; trình duyệt để dành khi CPU không đủ fps |
+| Lọc trước, ánh xạ sau | Ánh xạ trước, lọc trên góc khớp sau (thêm EMA 0,8 trên điểm mốc trước khi ánh xạ) | Lọc từng khớp dễ đặt vùng chết và ngưỡng tin cậy riêng cho từng khớp |
+| Bridge an toàn 30 Hz | 100 Hz | Lệnh mượt hơn cho motor; mục tiêu vẫn cập nhật theo fps camera |
+| Ly hợp đặt lại gốc (repo 4) | SPACE bật/nhả, trộn mềm 1,5 s, không đặt lại gốc | Ánh xạ theo hướng tuyệt đối nên không cần gốc tương đối |
+| openarm_can hoặc LeRobot `openarm_follower` | Chỉ openarm_can | Chưa viết backend LeRobot |
+| Pose2Sim so sai số | Chưa có script | Việc tiếp theo |
 
-Thứ tự làm:
+Đọc theo mũi tên; ô nét đứt chạy riêng, sau khi quay xong.
+
+Thứ tự làm (đề xuất ban đầu, giữ để tham khảo):
 
 1. Chạy MediaPipe Pose + Hand trong trình duyệt (`@mediapipe/tasks-vision@0.10.21` như repo 3), vẽ khung xương lên ảnh, in đặc trưng. Chưa nối robot.
 2. Viết ánh xạ J1–J4 từ vector vai→khuỷu và mặt phẳng khuỷu, theo thứ tự trục nâng trước → dang → xoay. Kiểm tra trên viewer MuJoCo v1.

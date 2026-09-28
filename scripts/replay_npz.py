@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Phát lại quỹ đạo .npz (từ offline_retarget.py hoặc --record) qua SafetyGate.
 
-    python scripts/replay_npz.py taichi_openarm.npz                   # mô phỏng, có hình
-    python scripts/replay_npz.py taichi_openarm.npz --robot openarm --speed 0.5
+    python scripts/replay_npz.py demo.npz                   # mô phỏng, có hình
+    python scripts/replay_npz.py demo.npz --robot openarm --speed 0.5
 """
 import argparse
 import sys

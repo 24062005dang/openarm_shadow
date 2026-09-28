@@ -25,11 +25,15 @@ Webcam / điện thoại ──► MediaPipe Pose + Hand ──► khung thân n
 
 Toàn bộ code tự viết; không chép code từ các repo trên (phần lớn không có license).
 
+Repo này chỉ cho **teleop thời gian thực bằng camera**. Bài múa Thái Cực (phát lại quỹ đạo mocap đã tính sẵn,
+`taichi_player`) là một hướng riêng của nhóm, không nằm ở đây. Hai repo chỉ dùng chung robot, bring-up CAN và cách
+lọc số đọc rác.
+
 ## Trạng thái
 
 - Đã kiểm tra (trên máy không có camera/robot): động học, retarget (thử ngược 500 tư thế, sai lệch < 1e-10°),
   bộ lọc, SafetyGate, luồng chạy sim với dữ liệu người giả lập, backend CAN với `openarm_can` giả lập.
-  `pytest` 22/22 đạt.
+  `pytest` 27/27 đạt (gồm test lọc số đọc rác của backend CAN).
 - **Chưa chạy** với webcam thật và **chưa chạy trên OpenArm thật**. Làm theo `docs/SAFETY.md` trước khi bật motor.
 - Quy ước góc URDF ↔ góc motor đang đặt là đồng nhất. **Phải kiểm tra** (SAFETY.md bước 3).
 
@@ -41,7 +45,7 @@ python3 -m venv --system-site-packages .venv   # system-site để thấy python
 source .venv/bin/activate
 pip install -r requirements.txt
 bash scripts/download_models.sh                # model MediaPipe vào models/
-python -m pytest -q                            # 22 test phải đạt
+python -m pytest -q                            # 27 test phải đạt
 python scripts/check_kinematics.py             # in trục khớp, thử ngược retarget
 ```
 
@@ -55,9 +59,9 @@ python scripts/shadow.py
 python scripts/shadow.py --mode mirror          # đứng đối diện robot, như soi gương
 python scripts/shadow.py --arms right           # chỉ điều khiển tay phải
 
-# 2) Video quay sẵn -> quỹ đạo (nhánh Thái Cực, thu dữ liệu IL)
-python scripts/offline_retarget.py taichi.mp4 -o taichi.npz --show
-python scripts/replay_npz.py taichi.npz          # xem lại trên robot mô phỏng
+# 2) Chế độ offline: video quay sẵn -> quỹ đạo (thử pipeline khi chưa có robot, thu demo cho IL)
+python scripts/offline_retarget.py demo.mp4 -o demo.npz --show
+python scripts/replay_npz.py demo.npz            # xem lại trên robot mô phỏng
 
 # 3) OpenArm thật (sau khi làm xong docs/SAFETY.md)
 python scripts/shadow.py --robot openarm --arms right
