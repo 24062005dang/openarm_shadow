@@ -1,0 +1,36 @@
+# Tay phải OpenArm thật: cổ tay J5-J7 30°/s + bộ lọc cổ tay nhanh (từ config/wrist_fast.yaml).
+#   python scripts/shadow.py --robot openarm --arms right --source 0 --config config/wrist_real_30.yaml
+#
+# Bước tiếp theo sau config/d455_wrist_real.yaml (15°/s). Chỉ dùng khi:
+#   1. Dry-run đã xác nhận chiều J5-J7 (hình xanh lá xoay cùng chiều robot thật).
+#   2. Đã chạy ổn d455_wrist_real.yaml ở 15°/s.
+# Giới hạn góc và offset giống d455_wrist_real.yaml; sửa offset ở CẢ HAI file khi đo lại.
+
+filter:
+  #           J1   J2   J3   J4   J5   J6   J7   kẹp
+  min_cutoff: [0.6, 0.6, 0.5, 0.6, 1.0, 1.0, 1.0, 1.5]
+  beta:       [0.02, 0.02, 0.02, 0.02, 0.8, 0.8, 0.8, 0.3]
+  deadband_deg: [1.5, 1.5, 2.5, 1.5, 2, 2, 2, 0]
+  # Robot thật: cổ tay 60° (mô phỏng dùng 90°) để vẫn chặn hướng tay bị lật do nhận diện sai.
+  jump_deg:   [35, 35, 35, 35, 60, 60, 60, 35]
+
+orientation:
+  smoothing: 0.7
+  fast_smoothing: 0.95
+  fast_angle_deg: 45
+
+safety:
+  max_vel_deg_s: [20, 20, 20, 20, 30, 30, 30]
+  engage_blend_s: 3.0
+  soft_limits_deg:
+    #        J1          J2          J3          J4          J5          J6          J7
+    right: [[-75, 75], [-9, 90], [-85, 85], [0, 135], [-85, 85], [-40, 40], [-80, 80]]
+    left:  [[-45, 10], [-45, 0], [-30, 30], [0, 90], [0, 0], [0, 0], [0, 0]]
+
+robot:
+  park_vel_deg_s: 15
+  urdf_to_motor:
+    right:
+      sign: [1, 1, 1, 1, 1, 1, 1]
+      # J4 -7.7: đo 30/09 khi tay thả thẳng. J5-J7: đo 29/09 ở tư thế nghỉ. Đo lại mỗi buổi.
+      offset_deg: [0, 0, 0, -7.7, 4.8, -4.5, 4.1]
