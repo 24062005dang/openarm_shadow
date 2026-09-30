@@ -36,6 +36,19 @@ orientation:
   body_smoothing: 0.35       # giữ body frame liên tục khi vai/hông depth chập chờn
   body_max_jump_deg: 45
 
+# Fusion nhiều camera: chỉ dùng khi chạy --source multi (xem config/fusion_2cam.yaml và docs/FUSION.md).
+fusion:
+  calib_file: config/cameras_calib.yaml   # do scripts/calibrate_cameras.py tạo
+  cameras: []                # [{name, source: realsense|<chỉ số webcam>, serial}]; camera đầu = khung tham chiếu
+  sync_tol_s: 0.025          # ghép khung lệch tối đa 25 ms
+  reproj_thresh_px: 25       # sai số chiếu lại lớn hơn -> bỏ camera tệ nhất / nhờ depth phân xử
+  depth_weight: 0.3          # trọng số depth RealSense so với 2D
+  depth_consistency_m: 0.04  # depth lệch nghiệm 2D hơn mức này thì không dùng
+  min_visibility: 0.3        # điểm Pose có visibility thấp hơn thì bỏ ở camera đó
+  depth: {patch_radius: 3, hand_patch_radius: 2, min_depth_m: 0.3, max_depth_m: 6.0, max_local_delta_m: 0.15}
+  orientation: {alpha: 0.6, hold_frames: 8, ambiguous_quality: 0.35, max_jump_deg: 100, confirm_frames: 4}
+  board: {squares_x: 5, squares_y: 7, square_m: 0.035, marker_m: 0.026, dictionary: DICT_4X4_50}
+
 models:
   pose: models/pose_landmarker_full.task
   hand: models/hand_landmarker.task

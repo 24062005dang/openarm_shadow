@@ -3,6 +3,7 @@
 
     python scripts/shadow.py                      # D455 RGB-D, robot mô phỏng
     python scripts/shadow.py --source 0           # webcam laptop (không có depth), robot mô phỏng
+    python scripts/shadow.py --source multi --config config/fusion_2cam.yaml   # 2 camera, fusion
     python scripts/shadow.py --robot openarm --dry-run   # đọc robot thật, motor TẮT (kiểm tra chiều khớp)
     python scripts/shadow.py --robot openarm --config config/first_real.yaml --arms right   # lần chạy thật đầu
     python scripts/shadow.py --config my.yaml --record run1.npz
@@ -19,9 +20,10 @@ from openarm_shadow.config import load_config
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--source", default=None, help="realsense (mặc định), chỉ số webcam (vd 0), file video hoặc URL")
+    ap.add_argument("--source", default=None, help="realsense (mặc định), multi (nhiều camera, fusion.cameras), chỉ số webcam (vd 0), file video hoặc URL")
     ap.add_argument("--robot", choices=["sim", "openarm"], default="sim")
-    ap.add_argument("--config", default=None)
+    ap.add_argument("--config", action="append", default=None,
+                    help="file config ghi đè default.yaml; dùng nhiều lần để ghép, file sau thắng")
     ap.add_argument("--mode", choices=["direct", "mirror"], default=None)
     ap.add_argument("--arms", default=None, help="vd: right hoặc right,left")
     ap.add_argument("--record", default=None, help="lưu mục tiêu + lệnh ra file .npz")

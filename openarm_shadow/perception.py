@@ -65,6 +65,7 @@ class Frame:
     depth_used: dict = field(default_factory=dict)  # số landmark depth hợp lệ theo tay (0..3)
     hand_depth: dict = field(default_factory=dict)  # diagnostics 21 điểm bàn tay theo tay người
     body_origin: np.ndarray | None = None
+    fusion: dict = field(default_factory=dict)      # chẩn đoán khi hợp nhất nhiều camera (multiview.py)
 
 
 def _intrinsic(intr, name):

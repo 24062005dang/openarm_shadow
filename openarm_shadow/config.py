@@ -14,10 +14,13 @@ def _merge(a, b):
 
 
 def load_config(path=None):
-    """Đọc config/default.yaml, rồi ghi đè bằng file của bạn (chỉ cần ghi các khoá muốn đổi)."""
+    """Đọc config/default.yaml, rồi ghi đè bằng file của bạn (chỉ cần ghi các khoá muốn đổi).
+
+    path: một file, hoặc danh sách file ghép lần lượt (file sau thắng), vd [first_real.yaml, fusion_2cam.yaml].
+    """
     cfg = yaml.safe_load(DEFAULT.read_text())
-    if path:
-        cfg = _merge(cfg, yaml.safe_load(Path(path).read_text()))
+    for p in ([path] if isinstance(path, (str, Path)) else (path or [])):
+        cfg = _merge(cfg, yaml.safe_load(Path(p).read_text()))
     for k in ("pose", "hand"):
         p = Path(cfg["models"][k])
         cfg["models"][k] = str(p if p.is_absolute() else ROOT / p)

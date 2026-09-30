@@ -1,0 +1,26 @@
+# Fusion 2 camera cho 1 tay (tay phải): camera 0 trực diện, camera 1 lệch ~45° về phía tay phải.
+#   python scripts/list_cameras.py                       # xem serial RealSense, điền vào dưới
+#   python scripts/calibrate_cameras.py --config config/fusion_2cam.yaml   # hiệu chuẩn 1 lần
+#   python scripts/shadow.py --source multi --arms right --config config/fusion_2cam.yaml
+#   robot thật: thêm --config config/first_real.yaml TRƯỚC file này, vd
+#   python scripts/shadow.py --source multi --robot openarm --arms right \
+#       --config config/first_real.yaml --config config/fusion_2cam.yaml
+#
+# Camera đầu tiên là khung tham chiếu và là camera để tự hiệu chuẩn tay ("lòng bàn tay nhìn camera").
+# Hai RealSense bắt buộc có serial. Webcam: source là chỉ số (vd 0), serial bỏ trống.
+
+fusion:
+  cameras:
+    - {name: front, source: realsense, serial: "SERIAL_D455"}    # D455 trực diện, ngang vai/hông, cách người 1,2-1,5 m
+    - {name: side45, source: realsense, serial: "SERIAL_D435I"}  # D435i lệch 45°, cùng độ cao, cùng khoảng cách
+  calib_file: config/cameras_calib.yaml
+
+camera:
+  realsense:
+    width: 640
+    height: 480
+    fps: 30
+
+models:
+  # 2 camera x (Pose + Hand) trên CPU laptop: nếu chậm (< 10 fps) đổi sang bản lite
+  pose: models/pose_landmarker_full.task

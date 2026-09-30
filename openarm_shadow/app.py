@@ -20,6 +20,7 @@ from .perception import Perception
 from .pipeline import ShadowPipeline
 from .robot import make_robot
 from .safety import SafetyGate
+from .multiview import MultiCameraSource, MultiViewPerception
 from .sources import open_source
 from .viz import draw_human, draw_robot, put_lines, side_by_side
 
@@ -47,6 +48,29 @@ class Controller(threading.Thread):
         except Exception as e:     # lỗi phần cứng: dừng vòng điều khiển, luồng chính sẽ thoát an toàn
             self.error = e
             self.running = False
+
+
+def fusion_lines(fr, sides):
+    """Dòng chẩn đoán fusion: số camera thấy vai/khuỷu/cổ tay, sai số chiếu lại, xung đột depth, bàn tay."""
+    fi = fr.fusion or {}
+    out = [f"fusion {fi.get('views', 0)} cam | lech khung {fi.get('skew_ms', 0.0):.0f} ms"]
+    names = {"right": (12, 14, 16), "left": (11, 13, 15)}
+    for s in sides:
+        pts = fi.get("points", {})
+        parts = []
+        for tag, i in zip(("vai", "khuyu", "co tay"), names[s]):
+            p = pts.get(i)
+            if p is None:
+                parts.append(f"{tag} -")
+                continue
+            err = p.get("err_px", float("nan"))
+            parts.append(f"{tag} {p['views']}cam" + (f" {err:.0f}px" if np.isfinite(err) else "") +
+                         (" D" if p.get("depth") else "") + (" !" if p.get("conflict") else ""))
+        out.append(f"{s}: " + " | ".join(parts))
+        h = fi.get(f"hand_{s}")
+        if h:
+            out.append(f"  ban tay {h['views']}cam {h['points']}/21 diem, nhin ro {h['quality']:.2f}, {h['mode']}")
+    return out
 
 
 def park(robot, gate, rest, vel_deg_s, timeout=25.0):
@@ -79,9 +103,23 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
     """dry_run (chỉ với robot_kind="openarm"): đọc góc robot thật, KHÔNG bật motor. Lệnh đi vào robot mô phỏng;
     hình vẽ có thêm nét xanh lá = tư thế đo từ robot thật. Dùng để kiểm tra can0/can1 và chiều từng khớp
     bằng cách cầm tay robot di chuyển, trước khi chạy thật."""
-    cap = open_source(source, cfg)
-    perc = Perception(cfg["models"]["pose"], cfg["models"]["hand"], min_conf=cfg["models"]["min_conf"],
-                      depth_cfg=cfg["camera"].get("realsense"), orientation_cfg=cfg.get("orientation"))
+    multi = str(source).lower() == "multi"
+    if multi:
+        # Nhiều camera (fusion.cameras): mỗi camera MediaPipe riêng, hợp nhất bằng triangulation (multiview.py).
+        cap = MultiCameraSource(cfg)
+        ok, first = cap.read()
+        if not ok:
+            cap.close()
+            raise SystemExit("Không đọc được khung từ đủ các camera trong fusion.cameras")
+        try:
+            perc = MultiViewPerception.from_config(cfg, first)
+        except BaseException:
+            cap.close()
+            raise
+    else:
+        cap = open_source(source, cfg)
+        perc = Perception(cfg["models"]["pose"], cfg["models"]["hand"], min_conf=cfg["models"]["min_conf"],
+                          depth_cfg=cfg["camera"].get("realsense"), orientation_cfg=cfg.get("orientation"))
     pipe = ShadowPipeline(cfg)
     real = None
     if robot_kind == "openarm" and dry_run:
@@ -128,8 +166,12 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
             ok, sample = cap.read()
             if not ok:
                 break
-            frame_bgr = sample.bgr
-            fr = perc.process(frame_bgr, depth_m=sample.depth_m, depth_intrinsics=sample.intrinsics)
+            if multi:
+                frame_bgr = None
+                fr = perc.process(sample)
+            else:
+                frame_bgr = sample.bgr
+                fr = perc.process(frame_bgr, depth_m=sample.depth_m, depth_intrinsics=sample.intrinsics)
             with ctl.lock:
                 engaged = gate.engaged
             auto_done = [] if engaged else pipe.auto_calibrate_hand_neutral(fr)
@@ -167,9 +209,12 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
             fps = 0.9 * fps + 0.1 / max(now - fps_t, 1e-3)
             fps_t = now
             if show:
-                cam = draw_human(frame_bgr.copy(), fr)
-                if cfg["camera"]["mirror_display"]:
-                    cam = cv2.flip(cam, 1)
+                if multi:
+                    cam = perc.draw(sample, fr)
+                else:
+                    cam = draw_human(frame_bgr.copy(), fr)
+                    if cfg["camera"]["mirror_display"]:
+                        cam = cv2.flip(cam, 1)
                 ready = ready_live
                 cx, cy = cam.shape[1] - 28, 28
                 if ready and not engaged:
@@ -187,7 +232,9 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                     cv2.putText(cam, "CALIB: ARM DOWN + PALM TO CAM", (max(8, cx - 285), cy + 6),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 180, 255), 2)
                 lines = [f"{fps:4.1f} fps | {status}", msg]
-                if sample.depth_m is not None:
+                if multi:
+                    lines += fusion_lines(fr, pipe.robot_sides)
+                elif sample.depth_m is not None:
                     ds = " ".join(f"{s}:{fr.depth_used.get(s, 0)}/3" for s in pipe.robot_sides)
                     lines.append("D455 depth vai/khuyu/co tay " + ds + " (3/3 = dang dung depth)")
                     for human_side, di in fr.hand_depth.items():

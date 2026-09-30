@@ -20,6 +20,7 @@ Webcam / điện thoại ──► MediaPipe Pose + Hand ──► khung thân n
 | Ánh xạ sang 7 khớp | `openarm_shadow/retarget.py` | SEW-Mimic (arXiv 2602.01632): căn **hướng** cánh tay, cẳng tay, bàn tay bằng bài toán con SP1/SP2 |
 | Lọc | `openarm_shadow/filters.py` | One Euro + vùng chết + bỏ bước nhảy (Marionette), EMA điểm mốc 0.8 (Hand Shadowing) |
 | An toàn | `openarm_shadow/safety.py` | Ly hợp + dead-man + tăng tốc mềm (Marionette, kinetic-arm-lab), capsule chống hai tay va nhau (SEW-Mimic) |
+| Fusion 2 camera (`--source multi`) | `openarm_shadow/multiview.py`, `calibration.py` | Pose2Sim (triangulate có trọng số), caliscope/aniposelib (ChArUco), stereohand (đồng bộ) — xem `docs/FUSION.md` |
 | Robot thật | `openarm_shadow/robot/openarm_can_robot.py` | `openarm_can`, gain chính thức v1.0 |
 | Động học OpenArm v1.0 | `openarm_shadow/kinematics.py` + `data/openarm_v10_arms.json` | URDF của `enactic/openarm_description` |
 
@@ -33,7 +34,7 @@ lọc số đọc rác.
 
 - Đã kiểm tra (trên máy không có camera/robot): động học, retarget (thử ngược 500 tư thế, sai lệch < 1e-10°),
   bộ lọc, SafetyGate, luồng chạy sim với dữ liệu người giả lập, backend CAN với `openarm_can` giả lập.
-  `pytest` 29/29 đạt (gồm test lọc số đọc rác của backend CAN).
+  `pytest` 61/61 đạt (gồm test lọc số đọc rác của backend CAN và test fusion 2 camera giả lập).
 - `scripts/demo_sim.py` chạy trọn luồng pipeline → SafetyGate → robot mô phỏng với người giả lập (đã chạy được).
 - Đã chạy với webcam thật trên laptop của nhóm (mô phỏng, 28/09): nhận diện và bám theo tay.
 - **Chưa chạy trên OpenArm thật**. Làm theo `docs/SAFETY.md` (dry-run trước, rồi `config/first_real.yaml`).
@@ -47,7 +48,7 @@ python3 -m venv --system-site-packages .venv   # system-site để thấy python
 source .venv/bin/activate
 pip install -r requirements.txt
 bash scripts/download_models.sh                # model MediaPipe vào models/
-python -m pytest -q                            # 29 test phải đạt
+python -m pytest -q                            # 61 test phải đạt
 python scripts/check_kinematics.py             # in trục khớp, thử ngược retarget
 ```
 
@@ -66,6 +67,7 @@ python scripts/shadow.py --mode mirror          # đứng đối diện robot, n
 python scripts/shadow.py --arms right           # chỉ điều khiển tay phải
 python scripts/shadow.py --source realsense      # D455 duy nhất: RGB MediaPipe + depth metric
 python scripts/shadow.py --source 0              # webcam laptop: không có depth, hướng tay từ MediaPipe
+python scripts/shadow.py --source multi --arms right --config config/fusion_2cam.yaml  # 2 camera, xem docs/FUSION.md
 
 # 2) Chế độ offline: video quay sẵn -> quỹ đạo (thử pipeline khi chưa có robot, thu demo cho IL)
 python scripts/offline_retarget.py demo.mp4 -o demo.npz --show
@@ -90,6 +92,11 @@ số điểm sau fusion và confidence. Cấu hình mặc định không tự ch
 Khi bàn tay xòe, point cloud lòng bàn tay được fit thành mặt phẳng và kết hợp với 21 landmark metric để tạo palm
 orientation. Trục đỏ = hướng ngón, xanh lá = ngang lòng bàn tay, xanh dương = pháp tuyến. `PLANE`, `LANDMARK`,
 `HOLD`, `NONE` lần lượt cho biết nguồn/ trạng thái orientation; dữ liệu này điều khiển J5–J7 trong mô phỏng.
+
+Dùng 2 camera (D455 trực diện + D435i lệch 45°): làm theo [`docs/FUSION.md`](docs/FUSION.md) — lấy serial bằng
+`scripts/list_cameras.py`, in bảng `scripts/make_charuco_board.py`, hiệu chuẩn 1 lần bằng
+`scripts/calibrate_cameras.py`, rồi chạy `--source multi`. Robot thật: `--config config/first_real.yaml --config
+config/fusion_2cam.yaml` (thứ tự này).
 
 ## Cách ánh xạ (tóm tắt)
 
@@ -116,10 +123,14 @@ scripts/offline_retarget.py  video -> .npz
 scripts/replay_npz.py        phát .npz qua SafetyGate
 scripts/check_kinematics.py  kiểm tra động học + retarget
 scripts/extract_kinematics.py sinh lại data JSON từ URDF
+scripts/list_cameras.py      liệt kê RealSense (serial, USB) và webcam
+scripts/make_charuco_board.py in bảng ChArUco A4
+scripts/calibrate_cameras.py hiệu chuẩn ngoại tham số nhiều camera -> config/cameras_calib.yaml
 tools/bringup/               script bật CAN, đọc khớp, lắc J7 (bring-up robot)
 tests/                       pytest
 docs/README.md               mục lục tài liệu + lộ trình
 docs/01..07_*.md             phân tích đề tài, OpenArm v1.0, bring-up, dữ liệu, 2 bài báo, tham khảo
 docs/SAFETY.md, DESIGN.md    checklist an toàn, thiết kế code
+docs/FUSION.md               fusion 2 camera: đặt camera, hiệu chuẩn, chạy, đọc màn hình, giới hạn
 docs/research/               phân tích 5 repo, bản dịch SEW-Mimic và Hand Shadowing
 ```
