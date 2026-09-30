@@ -66,6 +66,11 @@ engage chậm 3 s.
 - Ổn rồi mới: tay trái (`--arms left`), rồi hai tay, rồi nới giới hạn (quay về config/default.yaml), rồi J5–J7 sau khi
   đã kiểm tra chiều bằng dry-run.
 
+Sau khi đã xác minh zero và chiều J5–J7 bằng dry-run, dùng `config/d455_wrist_real.yaml` cho lượt thử xoay tay phải.
+Profile này mở toàn bộ dải cơ khí chính thức của tay phải; ba khớp cổ tay vẫn được giới hạn ở 15°/s trong lượt xác minh.
+Không dùng profile này nếu hình que xanh lá trong dry-run quay ngược robot thật ở bất kỳ khớp J5–J7 nào.
+Offset phần mềm đo ở tư thế nghỉ/khởi động: tay phải J5 +4,8°, J6 −4,5°, J7 +4,1°; không ghi lại zero motor.
+
 ## 5. Những gì CHƯA có
 - Bù trọng lực tắt mặc định. Không bù, với kp = 70 tay giơ ngang có thể võng khoảng 8° (ước tính từ mô men
   trọng lực ~10 Nm ở vai theo URDF). Bật `robot.gravity_comp` (cần `pip install pin` và đường dẫn URDF) sau khi thử từng khớp.

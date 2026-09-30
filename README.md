@@ -52,6 +52,7 @@ python scripts/check_kinematics.py             # in trục khớp, thử ngượ
 ```
 
 Robot thật cần thêm `openarm_can` (xem `tools/bringup/`): `sudo apt install python3-openarm-can`.
+RealSense D455 cần thêm: `pip install -e '.[realsense]'` (SDK đã thử với `pyrealsense2` 2.58.1).
 
 ## Chạy
 
@@ -63,6 +64,7 @@ python scripts/demo_sim.py                      # q/Esc để thoát; --out demo
 python scripts/shadow.py
 python scripts/shadow.py --mode mirror          # đứng đối diện robot, như soi gương
 python scripts/shadow.py --arms right           # chỉ điều khiển tay phải
+python scripts/shadow.py --source realsense      # D455 duy nhất: RGB MediaPipe + depth metric
 
 # 2) Chế độ offline: video quay sẵn -> quỹ đạo (thử pipeline khi chưa có robot, thu demo cho IL)
 python scripts/offline_retarget.py demo.mp4 -o demo.npz --show
@@ -71,12 +73,22 @@ python scripts/replay_npz.py demo.npz            # xem lại trên robot mô ph�
 # 3) OpenArm thật (làm theo docs/SAFETY.md)
 python scripts/shadow.py --robot openarm --dry-run                  # motor TẮT: chỉ đọc, kiểm tra chiều khớp
 python scripts/shadow.py --robot openarm --arms right --config config/first_real.yaml   # lần đầu: J1–J4, chậm
+python scripts/shadow.py --robot openarm --arms right --config config/d455_wrist_real.yaml # sau khi xác minh J5–J7
 ```
 
-Phím khi chạy: `SPACE` engage / nhả (ly hợp) · `c` hiệu chuẩn hướng bàn tay (đứng tay thả xuôi, lòng bàn
-tay hướng vào đùi) · `p` về tư thế nghỉ · `q`/`Esc` về tư thế nghỉ rồi thoát.
+Hướng bàn tay tự hiệu chuẩn khi tay thả xuôi, lòng bàn tay hướng vào đùi và đứng yên khoảng 0,6 s; màn hình báo
+`Auto calib ... OK`. Phím khi chạy: `SPACE` engage / nhả (ly hợp) · `c` hiệu chuẩn lại thủ công · `p` về tư thế
+nghỉ · `q`/`Esc` về tư thế nghỉ rồi thoát.
 
 Dùng điện thoại làm camera: cài app phát luồng video (vd. DroidCam, IP Webcam) rồi `--source http://<ip>:<port>/video`.
+
+Dùng Intel RealSense D455: cài `pyrealsense2`, cắm vào USB 3 rồi chạy `--source realsense`. Đây là camera duy nhất
+trong pipeline thật: MediaPipe chạy trên RGB của D455, depth đã align/lọc được dùng cho vai, khuỷu, cổ tay và fusion
+21 landmark bàn tay về cùng camera frame metric. Dòng `hand: DEPTH/FUSED` trên màn hình cho biết số điểm depth thật,
+số điểm sau fusion và confidence. Cấu hình mặc định không tự chuyển sang camera laptop nếu D455 mất kết nối.
+Khi bàn tay xòe, point cloud lòng bàn tay được fit thành mặt phẳng và kết hợp với 21 landmark metric để tạo palm
+orientation. Trục đỏ = hướng ngón, xanh lá = ngang lòng bàn tay, xanh dương = pháp tuyến. `PLANE`, `LANDMARK`,
+`HOLD`, `NONE` lần lượt cho biết nguồn/ trạng thái orientation; dữ liệu này điều khiển J5–J7 trong mô phỏng.
 
 ## Cách ánh xạ (tóm tắt)
 

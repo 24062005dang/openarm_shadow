@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Chạy teleop bắt chước tay.
 
-    python scripts/shadow.py                      # webcam 0, robot mô phỏng (an toàn, nên chạy trước)
-    python scripts/shadow.py --source video.mp4   # chạy trên video quay sẵn
+    python scripts/shadow.py                      # D455 RGB-D, robot mô phỏng
     python scripts/shadow.py --robot openarm --dry-run   # đọc robot thật, motor TẮT (kiểm tra chiều khớp)
     python scripts/shadow.py --robot openarm --config config/first_real.yaml --arms right   # lần chạy thật đầu
     python scripts/shadow.py --config my.yaml --record run1.npz
@@ -19,7 +18,7 @@ from openarm_shadow.config import load_config
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--source", default=None, help="chỉ số webcam, đường dẫn video hoặc URL luồng")
+    ap.add_argument("--source", default=None, help="nguồn camera; pipeline thật yêu cầu 'realsense'/'d455'")
     ap.add_argument("--robot", choices=["sim", "openarm"], default="sim")
     ap.add_argument("--config", default=None)
     ap.add_argument("--mode", choices=["direct", "mirror"], default=None)

@@ -4,3 +4,4 @@ models/
 *.npz
 *.mp4
 .pytest_cache/
+external/librealsense/

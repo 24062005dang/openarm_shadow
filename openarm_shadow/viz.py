@@ -37,6 +37,16 @@ def draw_human(img, frame):
         for a, b in HAND_EDGES:
             cv2.line(img, (int(h2[a, 0] * w), int(h2[a, 1] * h)), (int(h2[b, 0] * w), int(h2[b, 1] * h)), c,
                      max(1, th - 2))
+    # Palm frame metric từ D455: x đỏ (hướng ngón), y xanh lá (út->trỏ), z xanh dương (pháp tuyến).
+    axis_colors = ((0, 0, 255), (0, 220, 0), (255, 0, 0))
+    for ob in frame.arms.values():
+        if ob.hand_axes_px is None:
+            continue
+        origin = tuple(np.round(ob.hand_axes_px[0]).astype(int))
+        cv2.circle(img, origin, th + 2, (255, 255, 255), -1)
+        for endpoint, color in zip(ob.hand_axes_px[1:], axis_colors):
+            cv2.arrowedLine(img, origin, tuple(np.round(endpoint).astype(int)), color,
+                            max(2, th - 1), tipLength=0.2)
     return img
 
 
@@ -57,6 +67,14 @@ def draw_robot(kins, q: dict, size=(480, 480), q_target: dict | None = None, tit
         cx = half // 2 + view * half
         return int(cx + horiz * scale), int(H * 0.45 + (0.7 - p[2]) * scale)
 
+    def draw_frame(origin, R, view, label, length=0.075):
+        colors = ((0, 0, 255), (0, 180, 0), (255, 0, 0))  # x đỏ, y xanh lá, z xanh dương
+        po = proj(origin, view)
+        cv2.circle(canvas, po, 3, (30, 30, 30), -1)
+        for j, color in enumerate(colors):
+            cv2.arrowedLine(canvas, po, proj(origin + R[:, j] * length, view), color, 2, tipLength=0.22)
+        cv2.putText(canvas, label, (po[0] + 4, po[1] - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (40, 40, 40), 1)
+
     for view in (0, 1):
         cv2.putText(canvas, "truoc" if view == 0 else "ben phai", (view * half + 8, H - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (90, 90, 90), 1)
@@ -64,12 +82,19 @@ def draw_robot(kins, q: dict, size=(480, 480), q_target: dict | None = None, tit
             for qq, thick, col in ((q_target, 1, (180, 180, 180)), (q, 3, COL[s]), (q_meas, 2, (0, 170, 0))):
                 if qq is None or s not in qq or not np.all(np.isfinite(qq[s][:7])):
                     continue
-                P = kin.joint_positions(qq[s][:7])
-                pts = [kin.p_base] + [P[i] for i in (1, 3, 5, 8)]
+                k = kin.display_keypoints(qq[s][:7])
+                pts = [kin.p_base, k["shoulder"], k["elbow"], k["wrist"], k["tool"]]
                 for a, b in zip(pts[:-1], pts[1:]):
                     cv2.line(canvas, proj(a, view), proj(b, view), col, thick)
                 for p in pts[1:4]:
                     cv2.circle(canvas, proj(p, view), 4 if thick > 1 else 2, col, -1)
+            # Chỉ vẽ frame của lệnh hiện tại để không chồng ba bộ target/cmd/measured.
+            if q is not None and s in q and np.all(np.isfinite(q[s][:7])):
+                qs = q[s][:7]
+                k = kin.display_keypoints(qs)
+                draw_frame(0.5 * (k["shoulder"] + k["elbow"]), kin.R0(qs, 3), view, "U")
+                draw_frame(0.5 * (k["elbow"] + k["wrist"]), kin.R0(qs, 5), view, "F")
+                draw_frame(0.5 * (k["wrist"] + k["tool"]), kin.R_tool(qs), view, "H")
     cv2.line(canvas, (half, 0), (half, H), (200, 200, 200), 1)
     if title:
         cv2.putText(canvas, ascii_text(title), (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (40, 40, 40), 1)

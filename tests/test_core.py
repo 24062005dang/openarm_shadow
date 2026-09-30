@@ -61,10 +61,25 @@ def test_frame_convention():
     kin = ArmKinematics("right")
     k0 = kin.keypoints(np.zeros(7))
     assert k0["wrist"][2] < k0["elbow"][2] < k0["shoulder"][2]          # tay thả xuôi
+    # Ở zero-pose, tâm J7 -> đầu kẹp phải nằm trên trục dọc; dùng gốc J6
+    # làm "wrist" sẽ tạo một độ gãy giả 37.5 mm trong hình que.
+    hand = k0["tool"] - k0["wrist"]
+    assert abs(hand[0]) < 1e-6 and abs(hand[1]) < 1e-6 and hand[2] < 0
     q = np.zeros(7); q[3] = np.pi / 2
     k1 = kin.keypoints(q)
     assert k1["wrist"][0] - k1["elbow"][0] > 0.15                          # gập khuỷu -> cẳng tay ra +x (trước)
     assert kin.keypoints(np.zeros(7))["shoulder"][1] < 0                   # tay phải ở phía −y
+
+
+def test_display_zero_pose_is_collinear():
+    """Offset lắp motor không được tạo độ gập giả trong stick-model."""
+    kin = ArmKinematics("right")
+    k = kin.display_keypoints(np.zeros(7))
+    upper = unit(k["elbow"] - k["shoulder"])
+    fore = unit(k["wrist"] - k["elbow"])
+    hand = unit(k["tool"] - k["wrist"])
+    assert np.allclose(upper, fore, atol=1e-6)
+    assert np.allclose(fore, hand, atol=1e-6)
 
 
 # ---------------- retarget ----------------

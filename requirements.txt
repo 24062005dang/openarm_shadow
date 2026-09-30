@@ -5,3 +5,4 @@ pytest
 # tuỳ chọn:
 # pin                # Pinocchio, cho bù trọng lực (robot.gravity_comp)
 # openarm_can        # cài bằng apt: sudo apt install python3-openarm-can
+# pyrealsense2       # tuỳ chọn: Intel RealSense D455 (--source realsense)

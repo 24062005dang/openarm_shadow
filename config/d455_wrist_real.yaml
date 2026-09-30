@@ -1,0 +1,29 @@
+# D455 + tay phải OpenArm: lượt xác minh teleop xoay cổ tay J5-J7.
+#
+# Điều kiện trước khi chạy thật:
+#   1. Đọc thụ động đủ 7 khớp qua CAN.
+#   2. Dùng --dry-run xác nhận chiều và zero J5-J7.
+#   3. Đã chạy ổn config/first_real.yaml với J1-J4.
+#
+# Profile này dùng toàn bộ dải góc cơ khí chính thức của OpenArm cho tay phải.
+# config/first_real.yaml không bị thay đổi và vẫn là đường quay lại.
+
+safety:
+  # J5-J7 chậm hơn J1-J4 trong lần chạy thật đầu của palm orientation.
+  max_vel_deg_s: [20, 20, 20, 20, 15, 15, 15]
+  engage_blend_s: 3.0
+  soft_limits_deg:
+    # Không còn giới hạn thử nghiệm bảo thủ; đây là toàn bộ dải cơ khí chính thức.
+    #        J1          J2          J3          J4          J5          J6          J7
+    right: [[-75, 75], [-9, 90], [-85, 85], [0, 135], [-85, 85], [-40, 40], [-80, 80]]
+    # Chưa mở cổ tay trái trong lượt này.
+    left:  [[-45, 10], [-45, 0], [-30, 30], [0, 90], [0, 0], [0, 0], [0, 0]]
+
+robot:
+  park_vel_deg_s: 15
+  # Đo lại tại tư thế nghỉ/khởi động cơ khí ngày 29/09: motor đọc
+  # J5=+4.8°, J6=-4.5°, J7=+4.1°. Chỉ bù trong phần mềm, không ghi zero motor.
+  urdf_to_motor:
+    right:
+      sign: [1, 1, 1, 1, 1, 1, 1]
+      offset_deg: [0, 0, 0, 0, 4.8, -4.5, 4.1]
