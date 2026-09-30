@@ -130,3 +130,60 @@ def test_slerp_rotation_has_expected_half_angle():
     halfway = slerp_rotation(R0, R1, 0.5)
     assert np.rad2deg(rotation_distance(R0, halfway)) == pytest.approx(45.0, abs=1e-6)
     assert np.allclose(halfway.T @ halfway, np.eye(3), atol=1e-6)
+
+
+def _fake_perception():
+    """Perception không cần file model: thay detector MediaPipe bằng kết quả dựng sẵn."""
+    import types
+    from openarm_shadow.perception import Perception
+    p = Perception.__new__(Perception)
+    p.mp = types.SimpleNamespace(Image=lambda **k: None, ImageFormat=types.SimpleNamespace(SRGB=0))
+    p._last_ts = -1
+    p.depth_cfg, p.orientation_cfg = {}, {}
+    for name in ("_hand_depth_model", "_hand_orientation"):
+        setattr(p, name, {"right": None, "left": None})
+    p._hand_depth_misses = {"right": 0, "left": 0}
+    p._orientation_tracking = {"right": False, "left": False}
+    p._orientation_good = {"right": 0, "left": 0}
+    p._orientation_bad = {"right": 0, "left": 0}
+    p._body_R = None
+    return p
+
+
+def test_webcam_without_depth_still_gives_hand_orientation():
+    """Không có D455: H (J5–J7) phải lấy từ điểm world của MediaPipe Hand, không được bỏ trống."""
+    import types
+    L = lambda x, y, z=0.0, v=0.99: types.SimpleNamespace(x=x, y=y, z=z, visibility=v)
+    pose2d = [L(0.5, 0.5) for _ in range(33)]
+    world = [L(0, 0, 0) for _ in range(33)]
+    # vai trái/phải, khuỷu, cổ tay, hông (world: x phải, y xuống, z xa camera; người nhìn camera)
+    for i, (x, y) in {11: (0.6, 0.3), 12: (0.4, 0.3), 13: (0.62, 0.45), 14: (0.38, 0.45),
+                      15: (0.63, 0.6), 16: (0.37, 0.6), 23: (0.57, 0.7), 24: (0.43, 0.7)}.items():
+        pose2d[i] = L(x, y)
+    for i, (x, y) in {11: (0.18, -0.45), 12: (-0.18, -0.45), 13: (0.2, -0.17), 14: (-0.2, -0.17),
+                      15: (0.21, 0.08), 16: (-0.21, 0.08), 23: (0.1, 0.0), 24: (-0.1, 0.0)}.items():
+        world[i] = L(x, y, 0.0)
+    # bàn tay phải thả xuôi, ngón chỉ xuống, lòng bàn tay nhìn camera
+    hw = np.zeros((21, 3))
+    for k, (dx, dy) in {0: (0, 0), 5: (-0.035, 0.09), 9: (-0.01, 0.095), 13: (0.012, 0.09),
+                        17: (0.032, 0.08)}.items():
+        hw[k] = [dx, dy, 0]
+    for m in (5, 9, 13, 17):
+        for j in range(1, 4):
+            hw[m + j] = hw[m] + [0, 0.025 * j, 0]
+    hw[1:5] = [[-0.04, 0.03, 0], [-0.06, 0.05, 0], [-0.075, 0.065, 0], [-0.085, 0.08, 0]]
+    h2 = [L(0.37 + p[0], 0.6 + p[1]) for p in hw]
+    hres = types.SimpleNamespace(hand_landmarks=[h2], hand_world_landmarks=[[L(*p) for p in hw]],
+                                 handedness=[[types.SimpleNamespace(score=0.95)]])
+    pres = types.SimpleNamespace(pose_landmarks=[pose2d], pose_world_landmarks=[world])
+    p = _fake_perception()
+    p.pose = types.SimpleNamespace(detect_for_video=lambda img, ts: pres)
+    p.hands = types.SimpleNamespace(detect_for_video=lambda img, ts: hres)
+    img = np.zeros((480, 640, 3), np.uint8)
+    p.process(img, t=0.0)                       # khung đầu: bộ ổn định chờ nhận lại hướng
+    fr = p.process(img, t=0.033)
+    ob = fr.arms["right"]
+    assert ob.H is not None and ob.hand_R_cam is not None
+    assert np.allclose(ob.H.T @ ob.H, np.eye(3), atol=1e-6)
+    assert ob.hand_open_fingers == 4
+    assert ob.hand_R_cam[2, 2] < -0.9            # lòng bàn tay nhìn camera -> pháp tuyến hướng về camera (-z)

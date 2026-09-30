@@ -2,6 +2,7 @@
 """Chạy teleop bắt chước tay.
 
     python scripts/shadow.py                      # D455 RGB-D, robot mô phỏng
+    python scripts/shadow.py --source 0           # webcam laptop (không có depth), robot mô phỏng
     python scripts/shadow.py --robot openarm --dry-run   # đọc robot thật, motor TẮT (kiểm tra chiều khớp)
     python scripts/shadow.py --robot openarm --config config/first_real.yaml --arms right   # lần chạy thật đầu
     python scripts/shadow.py --config my.yaml --record run1.npz
@@ -18,7 +19,7 @@ from openarm_shadow.config import load_config
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--source", default=None, help="nguồn camera; pipeline thật yêu cầu 'realsense'/'d455'")
+    ap.add_argument("--source", default=None, help="realsense (mặc định), chỉ số webcam (vd 0), file video hoặc URL")
     ap.add_argument("--robot", choices=["sim", "openarm"], default="sim")
     ap.add_argument("--config", default=None)
     ap.add_argument("--mode", choices=["direct", "mirror"], default=None)
@@ -31,6 +32,9 @@ def main():
         cfg["mapping"]["mode"] = args.mode
     if args.arms:
         cfg["mapping"]["robot_arms"] = args.arms.split(",")
+    if args.source is not None:
+        # Nguồn chọn tay trên dòng lệnh thắng yêu cầu D455 trong config (vd --source 0 = webcam laptop).
+        cfg["camera"]["required_source"] = None
     src = args.source if args.source is not None else cfg["camera"]["index"]
     if args.dry_run and args.robot != "openarm":
         raise SystemExit("--dry-run chỉ dùng cùng --robot openarm")

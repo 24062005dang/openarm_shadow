@@ -100,6 +100,7 @@ def robot(monkeypatch):
     monkeypatch.setitem(sys.modules, "openarm_can", oa)
     from openarm_shadow.robot.openarm_can_robot import OpenArmCANRobot
     cfg = load_config()
+    cfg["robot"]["feedback_timeout_s"] = 1.0   # máy test bận không được làm test hỏng vì "mất phản hồi" giả
     r = OpenArmCANRobot(cfg["robot"], ["right"])
     return r, oa.OpenArm.instances[-1]
 

@@ -65,6 +65,7 @@ python scripts/shadow.py
 python scripts/shadow.py --mode mirror          # đứng đối diện robot, như soi gương
 python scripts/shadow.py --arms right           # chỉ điều khiển tay phải
 python scripts/shadow.py --source realsense      # D455 duy nhất: RGB MediaPipe + depth metric
+python scripts/shadow.py --source 0              # webcam laptop: không có depth, hướng tay từ MediaPipe
 
 # 2) Chế độ offline: video quay sẵn -> quỹ đạo (thử pipeline khi chưa có robot, thu demo cho IL)
 python scripts/offline_retarget.py demo.mp4 -o demo.npz --show

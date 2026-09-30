@@ -595,7 +595,16 @@ class Perception:
                                   "plane_inliers": plane_info["inliers"], "plane_rms_m": plane_info["rms_m"]})
                     hand_depth[side] = {k: v for k, v in dinfo.items() if k != "model"}
                 else:
-                    self._stabilize_orientation(side, None, "NONE")
+                    # Webcam thường (không có depth): hướng bàn tay từ điểm "world" 3D của MediaPipe Hand.
+                    # Trục của các điểm này cùng hướng trục camera, nên dùng chung palm_frame_from_depth
+                    # (cùng quy ước x hướng ngón, z pháp tuyến ra khỏi lòng bàn tay) và cùng bộ ổn định.
+                    ob.hand_open_fingers = open_finger_count(hw)
+                    raw_R, _ = palm_frame_from_depth(hw, side=side)
+                    stable_R, orientation_mode = self._stabilize_orientation(side, raw_R, "WORLD")
+                    ob.hand_orientation_mode = orientation_mode
+                    if stable_R is not None:
+                        ob.H = active_R.T @ stable_R
+                        ob.hand_R_cam = stable_R
             else:
                 self._stabilize_orientation(side, None, "NONE")
         return Frame(arms, pose_2d, hands_2d, active_R, t, depth_used, hand_depth, active_origin)
