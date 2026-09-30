@@ -71,7 +71,8 @@ def main():
             dets = [detect(det, s.bgr) for s in ms.views]
             counts = [0 if ids is None else len(ids) for ids, _ in dets]
             now = time.monotonic()
-            all_ok = min(counts) >= args.min_corners and ms.skew_s <= src.tol
+            all_ok = (min(counts) >= args.min_corners and ms.skew_s <= src.tol
+                      and not any(ms.stale or []))            # camera treo: không ghép khung cũ
             ref_center = None if dets[0][1] is None else dets[0][1].mean(axis=0)
             moved = last_ref is None or (ref_center is not None and np.linalg.norm(ref_center - last_ref) > 40)
             if all_ok and moved and now - last_t > 0.8:

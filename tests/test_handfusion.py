@@ -135,7 +135,7 @@ def test_forearm_and_hand_share_wrist():
     W = human_world()
     hand = hand_points("right", _hand_R(), W[16] + [0.01, 0.0, 0.0])   # cổ tay Hand lệch cổ tay Pose 1 cm
     views = [FakeView(c, W, hand, seed=i, noise=0.3) for i, c in enumerate(cams)]
-    fr = _run(views, cams)
+    fr = _run(views, cams, frames=10)               # tỉ lệ trộn tăng dần 0,15/khung tới 0,7
     assert fr.fusion["points"][16].get("hand_root")
     ob = fr.arms["right"]
     Rb = fr.body_R
@@ -157,3 +157,19 @@ def test_end_to_end_switches_to_kabsch_and_orientation_is_right():
     R_true, _ = palm_frame_from_depth(hand, side="right")
     Rb, _ = body_frame(W, np.ones(33))
     assert ang(Rb @ fr.arms["right"].H, R_true) < 8
+
+
+def test_camera_weight_changes_mixing_not_confidence():
+    """weight 0.7 cho webcam chỉ đổi cách trộn; độ tin cậy vai/khuỷu/bàn tay không bị kéo xuống dưới min_conf."""
+    cams = two_cams()
+    W = human_world()
+    hand = hand_points("right", _hand_R(), W[16])
+    views = [FakeView(c, W, hand, seed=i) for i, c in enumerate(cams)]
+    cfg = {"reproj_thresh_px": 25, "cameras": [{"name": "front", "weight": 0.7}, {"name": "side45"}]}
+    mvp = MultiViewPerception(views, cams, cfg, parallel=False)
+    blank = types.SimpleNamespace(bgr=np.zeros((480, 640, 3), np.uint8), depth_m=None, intrinsics=None)
+    for k in range(3):
+        fr = mvp.process(MultiSample([blank, blank], 0.033 * k))
+    ob = fr.arms["right"]
+    assert abs(ob.conf["upper"] - 0.95) < 1e-6 and abs(ob.conf["fore"] - 0.95) < 1e-6
+    assert ob.conf["hand"] > 0.9

@@ -198,8 +198,13 @@ def fuse_point(obs, depth, reproj_px=25.0, depth_weight=0.3, depth_tol_m=0.04):
        - XA hơn = mâu thuẫn (lỗi dọc đường epipolar mà 2 camera không tự thấy, hoặc depth rơi vào nền)
          -> info["conflict"] = True, độ tin cậy x0.5.
     3. 1 camera: chỉ dùng được nếu camera đó có depth.
+
+    obs: [(cam, xy, conf)] hoặc [(cam, xy, conf, trust)]. conf (độ tin cậy MediaPipe) quyết định độ tin cậy trả về;
+    trust (trọng số camera, kích thước bàn tay, góc nhìn) chỉ dùng để trộn các camera khi triangulate.
     """
     obs = [o for o in obs if o[2] > 0.05 and np.all(np.isfinite(o[1]))]
+    conf_of = {id(o[0]): float(o[2]) for o in obs}
+    obs = [(o[0], o[1], float(o[2]) * (float(o[3]) if len(o) > 3 else 1.0)) for o in obs]
     dep = {id(o[0]): d for o, d in zip(obs, [None] * len(obs))}
     for cam, Xd, w in depth:
         if np.all(np.isfinite(Xd)) and w > 0.05:
@@ -213,7 +218,7 @@ def fuse_point(obs, depth, reproj_px=25.0, depth_weight=0.3, depth_tol_m=0.04):
             use.pop(int(np.argmax(errs)))
             X = triangulate_weighted(use)
             errs = [reprojection_px(c, X, xy) for c, xy, _ in use] if X is not None else []
-        conf = float(np.mean([w for _, _, w in use]))
+        conf = float(np.mean([conf_of[id(c)] for c, _, _ in use]))
         if X is not None and max(errs) > reproj_px:
             # 2 camera mâu thuẫn (một camera đoán sai điểm, vd bị che): depth là bằng chứng độc lập để phân xử.
             # Ứng viên = 1 camera + depth của chính nó; chọn ứng viên khớp nhất với các camera còn lại.
@@ -257,7 +262,7 @@ def fuse_point(obs, depth, reproj_px=25.0, depth_weight=0.3, depth_tol_m=0.04):
     if len(obs) == 1 and dep.get(id(obs[0][0])) is not None:
         d = dep[id(obs[0][0])]
         info["depth"] = 1
-        return d[0], 0.8 * min(obs[0][2], d[1]), info
+        return d[0], 0.8 * min(conf_of[id(obs[0][0])], d[1]), info
     return None, 0.0, info
 
 
@@ -464,6 +469,7 @@ class MultiViewPerception:
         self.wrist_from_hand = float(hc.get("wrist_from_hand", 0.7))
         self.wrist_agree_m = float(hc.get("wrist_agree_m", 0.08))
         self.shapes = {s: HandShape() for s in ("right", "left")}
+        self._wrist_blend = {s: 0.0 for s in ("right", "left")}
         self.palms = {s: PalmModel(s, max_rms_m=float(hc.get("palm_max_rms_m", 0.012)))
                       for s in ("right", "left")}
         self._facing = {s: None for s in ("right", "left")}
@@ -522,7 +528,7 @@ class MultiViewPerception:
             for k, i in enumerate(BODY_IDS):
                 vis = float(P[i, 2])
                 if vis >= self.min_vis:
-                    o["pose"][i] = (norm[k], vis * cw, lift(px[i, 0], px[i, 1], dc.get("patch_radius", 3)), px[i])
+                    o["pose"][i] = (norm[k], vis, lift(px[i, 0], px[i, 1], dc.get("patch_radius", 3)), px[i])
         for h2, side in fr.hands_2d:
             if side not in ("right", "left") or side in o["hand"]:
                 continue
@@ -532,11 +538,10 @@ class MultiViewPerception:
                 conf = 0.5
             # Bàn tay nhỏ trên ảnh (xa, độ phân giải thấp) -> điểm kém chính xác -> trọng số thấp hơn
             size = np.linalg.norm(px[H_MIDDLE_MCP] - px[H_WRIST]) * REF_FX / max(cam.fx, 1e-6)
-            raw_conf = conf
-            conf *= cw * float(np.clip(size / self.hand_ref_px, 0.4, 1.0))    # chỉ là trọng số tương đối
+            trust = cw * float(np.clip(size / self.hand_ref_px, 0.4, 1.0))    # chỉ là trọng số tương đối
             norm = cam.normalize(px)
             lifted = [lift(px[j, 0], px[j, 1], dc.get("hand_patch_radius", 2)) for j in range(21)]
-            o["hand"][side] = (norm, conf, lifted, px, raw_conf)
+            o["hand"][side] = (norm, conf, lifted, px, trust)
         return o
 
     # -- hợp nhất ----------------------------------------------------------------------------------------
@@ -545,7 +550,8 @@ class MultiViewPerception:
         W = np.full((33, 3), np.nan)
         vis = np.zeros(33)
         for i in BODY_IDS:
-            obs = [(self.cams[v], o["pose"][i][0], o["pose"][i][1]) for v, o in enumerate(views_obs) if i in o["pose"]]
+            obs = [(self.cams[v], o["pose"][i][0], o["pose"][i][1], self.view_weight[v])
+                   for v, o in enumerate(views_obs) if i in o["pose"]]
             dep = [(self.cams[v], o["pose"][i][2], o["pose"][i][1]) for v, o in enumerate(views_obs)
                    if i in o["pose"] and o["pose"][i][2] is not None]
             X, c, pi = fuse_point(obs, dep, self.reproj_px, self.depth_w, self.depth_tol)
@@ -574,13 +580,16 @@ class MultiViewPerception:
             self._gate_hands(side, W[i_w], views_obs, info)
             hand_root = self._fuse_hand(side, ob, views_obs, Rb, info, W[i_e], W[i_w])
             if np.all(np.isfinite(W[[i_s, i_e, i_w]])):
-                w_pt = W[i_w]
                 # Đồng bộ tay-bàn tay: cổ tay của cẳng tay (J3/J4) và gốc khung bàn tay (J5-J7) dùng CHUNG một
-                # điểm. Cổ tay của MediaPipe Hand chính xác hơn cổ tay Pose; chỉ dùng khi hai điểm gần nhau.
-                if hand_root is not None and np.linalg.norm(hand_root - W[i_w]) < self.wrist_agree_m:
-                    w_pt = (1 - self.wrist_from_hand) * W[i_w] + self.wrist_from_hand * hand_root
+                # điểm. Cổ tay của MediaPipe Hand chính xác hơn cổ tay Pose; chỉ dùng khi hai điểm gần nhau. Tỉ lệ
+                # trộn đổi dần (0,15/khung) để bàn tay lúc có lúc mất không làm cổ tay (và J3/J4) giật.
+                agree = hand_root is not None and np.linalg.norm(hand_root - W[i_w]) < self.wrist_agree_m
+                goal = self.wrist_from_hand if agree else 0.0
+                a = self._wrist_blend[side]
+                a = self._wrist_blend[side] = a + float(np.clip(goal - a, -0.15, 0.15))
+                if agree and a > 0:
+                    W[i_w] = (1 - a) * W[i_w] + a * hand_root
                     info["points"][i_w]["hand_root"] = True
-                W[i_w] = w_pt
                 ob.s, ob.e, ob.w = (Rb.T @ (W[k] - origin) for k in (i_s, i_e, i_w))
                 ob.conf["upper"] = float(min(vis[i_s], vis[i_e]))
                 ob.conf["fore"] = float(min(vis[i_e], vis[i_w]))
@@ -619,11 +628,11 @@ class MultiViewPerception:
         for j in range(21):
             obs, dep = [], []
             for v in seen:
-                norm, conf, lifted = views_obs[v]["hand"][side][:3]
-                wv = conf * (1.0 if facing is None else 0.25 + 0.75 * facing[v])
-                obs.append((self.cams[v], norm[j], wv))
+                norm, conf, lifted, _, trust = views_obs[v]["hand"][side]
+                tv = trust * (1.0 if facing is None else 0.25 + 0.75 * facing[v])
+                obs.append((self.cams[v], norm[j], conf, tv))
                 if lifted[j] is not None:
-                    dep.append((self.cams[v], lifted[j], wv))
+                    dep.append((self.cams[v], lifted[j], conf * tv))
             X, c, _ = fuse_point(obs, dep, self.reproj_px, self.depth_w, self.depth_tol)
             if X is not None:
                 pts[j], confs[j] = X, c
@@ -646,11 +655,11 @@ class MultiViewPerception:
             self._facing[side] = face_v
         R, mode = self.trackers[side].update(raw_R, quality)
         ob.hand_orientation_mode = mode if raw_R is not None or mode != "HOLD" else f"HOLD {fit_mode}"
-        # Độ tin cậy tuyệt đối: MediaPipe tốt nhất trong các camera thấy tay x tỉ lệ điểm lòng bàn tay có mặt
-        # (trọng số camera/kích thước chỉ dùng để trộn các camera, không hạ độ tin cậy xuống dưới min_conf).
-        palm_ok = np.count_nonzero(confs[list(PALM_IDS)] > 0) / len(PALM_IDS)
-        best = max(views_obs[v]["hand"][side][4] for v in seen)
-        ob.conf["hand"] = float(best * palm_ok) if raw_R is not None else 0.0
+        # Độ tin cậy: trung bình các điểm lòng bàn tay có mặt (đã gồm phạt khi hai camera mâu thuẫn), giảm khi
+        # chỉ còn 3 điểm; trust của camera chỉ dùng để trộn, không hạ độ tin cậy.
+        pc = confs[list(PALM_IDS)]
+        n_ok = int(np.count_nonzero(pc > 0))
+        ob.conf["hand"] = (float(np.mean(pc[pc > 0]) * min(1.0, n_ok / 4)) if raw_R is not None and n_ok else 0.0)
         if R is not None:
             ob.H = Rb.T @ R
             ob.hand_R_cam = R

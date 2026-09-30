@@ -69,8 +69,8 @@ class SafetyGate:
         self.target = {s: np.asarray(v, float).copy() for s, v in targets.items() if s in self.sides}
         if not fresh:
             return
-        if self.engaged and now - self.t_target > self.deadman_s:
-            self.t_engage = now
+        if self.engaged and now - self.t_target > 2 * self.deadman_s:
+            self.t_engage = now          # mất mục tiêu thật sự (không chỉ 1 khung chậm): tăng tốc lại từ đầu
         self.t_target = now
 
     # ------------------------------------------------------------------

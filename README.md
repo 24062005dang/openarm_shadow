@@ -34,7 +34,7 @@ lọc số đọc rác.
 
 - Đã kiểm tra (trên máy không có camera/robot): động học, retarget (thử ngược 500 tư thế, sai lệch < 1e-10°),
   bộ lọc, SafetyGate, luồng chạy sim với dữ liệu người giả lập, backend CAN với `openarm_can` giả lập.
-  `pytest` 79/79 đạt (gồm test lọc số đọc rác của backend CAN, fusion 2 camera và làm sạch bàn tay giả lập).
+  `pytest` 80/80 đạt (gồm test lọc số đọc rác của backend CAN, fusion 2 camera và làm sạch bàn tay giả lập).
 - `scripts/demo_sim.py` chạy trọn luồng pipeline → SafetyGate → robot mô phỏng với người giả lập (đã chạy được).
 - Đã chạy với webcam thật trên laptop của nhóm (mô phỏng, 28/09): nhận diện và bám theo tay.
 - Tay phải đã chạy trên OpenArm thật (30/09) với `config/first_real.yaml` (J1–J4, J5–J7 khoá). Tay trái CHƯA:
@@ -51,7 +51,7 @@ python3 -m venv --system-site-packages .venv   # system-site để thấy python
 source .venv/bin/activate
 pip install -r requirements.txt
 bash scripts/download_models.sh                # model MediaPipe vào models/
-python -m pytest -q                            # 79 test phải đạt
+python -m pytest -q                            # 80 test phải đạt
 python scripts/check_kinematics.py             # in trục khớp, thử ngược retarget
 ```
 
