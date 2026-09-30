@@ -179,3 +179,21 @@ def test_enable_refuses_when_zero_is_wrong(robot):
     with pytest.raises(RobotFault):
         r.enable()
     assert not hw.enabled
+
+
+def test_software_offset_shifts_motor_limits(monkeypatch):
+    """J4 thẳng tay đọc -7.7° (zero lệch): với offset -7.7° thì được bật motor, và lệnh 0° URDF = -7.7° motor."""
+    oa = make_fake_openarm_can()
+    monkeypatch.setitem(sys.modules, "openarm_can", oa)
+    from openarm_shadow.robot.openarm_can_robot import OpenArmCANRobot
+    cfg = load_config("config/first_real.yaml")
+    cfg["robot"]["feedback_timeout_s"] = 1.0
+    r = OpenArmCANRobot(cfg["robot"], ["right"])
+    hw = oa.OpenArm.instances[-1]
+    hw.a.ms[3].q = np.deg2rad(-7.7)
+    q = r.connect()["right"]
+    assert not r.out_of_range()
+    assert q[3] == pytest.approx(0.0, abs=1e-6)
+    r.enable()
+    r.send({"right": np.zeros(8)})
+    assert hw.a.ms[3].q == pytest.approx(np.deg2rad(-7.7), abs=np.deg2rad(0.5))

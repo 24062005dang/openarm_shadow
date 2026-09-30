@@ -26,4 +26,5 @@ robot:
   urdf_to_motor:
     right:
       sign: [1, 1, 1, 1, 1, 1, 1]
-      offset_deg: [0, 0, 0, 0, 4.8, -4.5, 4.1]
+      # J4 -7.7: đo 30/09 khi tay thả thẳng (xem config/first_real.yaml). Đo lại mỗi buổi.
+      offset_deg: [0, 0, 0, -7.7, 4.8, -4.5, 4.1]

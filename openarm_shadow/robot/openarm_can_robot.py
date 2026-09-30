@@ -37,8 +37,11 @@ class _Arm:
         m = rcfg["urdf_to_motor"][side]
         self.sign = np.asarray(m["sign"], float)
         self.offset = np.deg2rad(np.asarray(m["offset_deg"], float))
+        # motor_limits_deg là giới hạn khớp thật (góc URDF). Đổi sang góc motor bằng cùng sign/offset,
+        # để khi bù zero bằng offset phần mềm thì giới hạn dịch theo (vd J4 thẳng tay đọc -7.7°).
         lim = np.deg2rad(np.asarray(rcfg["motor_limits_deg"][side], float))
-        self.mlo, self.mhi = lim[:, 0], lim[:, 1]
+        a, b = self.sign * lim[:, 0] + self.offset, self.sign * lim[:, 1] + self.offset
+        self.mlo, self.mhi = np.minimum(a, b), np.maximum(a, b)
         self.kp = np.asarray(rcfg["kp"], float)
         self.kd = np.asarray(rcfg["kd"], float)
         g = rcfg["gripper"]
@@ -198,8 +201,9 @@ class OpenArmCANRobot:
         for s, a in self.arms.items():
             q = a.q_motor
             for i in np.flatnonzero((q < a.mlo - tol) | (q > a.mhi + tol)):
-                out.append(f"{s} J{i + 1}: {np.rad2deg(q[i]):7.1f}° (giới hạn motor "
-                           f"{np.rad2deg(a.mlo[i]):.0f}..{np.rad2deg(a.mhi[i]):.0f}°)")
+                out.append(f"{s} J{i + 1}: motor {np.rad2deg(q[i]):7.1f}° (giới hạn motor "
+                           f"{np.rad2deg(a.mlo[i]):.1f}..{np.rad2deg(a.mhi[i]):.1f}°, "
+                           f"offset {np.rad2deg(a.offset[i]):+.1f}°)")
         return out
 
     def read(self):

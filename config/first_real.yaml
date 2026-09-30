@@ -17,3 +17,10 @@ safety:
 
 robot:
   park_vel_deg_s: 15
+  # Bù zero bằng phần mềm (góc motor = góc URDF + offset). Không ghi gì vào motor.
+  # J4: tay thả thẳng (khuỷu tựa vào chặn cơ khí = 0° URDF) motor đọc -7.7° ngày 30/09
+  # (ngày 28/09 đọc -1.9°). ĐO LẠI mỗi buổi bằng tools/bringup/read_joints.py và sửa số này.
+  urdf_to_motor:
+    right:
+      sign: [1, 1, 1, 1, 1, 1, 1]
+      offset_deg: [0, 0, 0, -7.7, 0, 0, 0]

@@ -109,7 +109,7 @@ robot:
   urdf_to_motor:
     right: {sign: [1, 1, 1, 1, 1, 1, 1], offset_deg: [0, 0, 0, 0, 0, 0, 0]}
     left:  {sign: [1, 1, 1, 1, 1, 1, 1], offset_deg: [0, 0, 0, 0, 0, 0, 0]}
-  # Chốt chặn cuối ở mức motor (LeRobot openarm_follower)
+  # Chốt chặn cuối ở mức motor (LeRobot openarm_follower). Viết theo góc URDF; code tự cộng urdf_to_motor.
   motor_limits_deg:
     right: [[-75, 75], [-9, 90], [-85, 85], [0, 135], [-85, 85], [-40, 40], [-80, 80]]
     left:  [[-75, 75], [-90, 9], [-85, 85], [0, 135], [-85, 85], [-40, 40], [-80, 80]]
