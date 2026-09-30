@@ -55,7 +55,8 @@ khớp nhau.
 đặt bảng ChArUco cách webcam ~1,3 m và chỉ đổi một thứ mỗi lần):
 
 1. **Lau ống kính webcam** bằng khăn mềm. Vết vân tay là nguyên nhân mờ hay gặp nhất.
-2. **720p MJPG** (đã đặt trong `fusion_2cam.yaml`: 1280x720, `fourcc: MJPG`, 30 fps). 640x480 cũ chỉ có 1/3 số
+2. **720p MJPG** (đã đặt trong `fusion_2cam.yaml`: 1280x720, `fourcc: MJPG`, 30 fps; chương trình thử
+   nhiều thứ tự đặt và báo `Cảnh báo: webcam ... không chạy được` nếu webcam không nhận). 640x480 cũ chỉ có 1/3 số
    điểm ảnh; bàn tay cách 1,3 m chỉ còn ~40 px. `webcam_check.py` in dòng `Đang chạy: 1280x720 MJPG 30 fps`; nếu vẫn
    ra YUYV hay ~10 fps thì webcam không hỗ trợ, xem danh sách định dạng nó in ra.
 3. **Ánh sáng**: bật đủ đèn, chiếu vào người, không đứng ngược cửa sổ. Thiếu sáng -> webcam phơi sáng lâu -> tay
@@ -96,6 +97,10 @@ python scripts/shadow.py --source multi --robot openarm --arms right \
 ```
 
 ### Hiệu chuẩn (bước 3)
+
+- Bảng hiện trên màn hình (thay giấy in) cũng dùng được, nhưng phải **đo cạnh ô trên màn hình** và sửa
+  `fusion.board.square_m`, `marker_m` cho đúng. Sai kích thước ô thì góc giữa hai camera vẫn đúng nhưng khoảng cách
+  bị co/giãn, depth D435i sẽ không khớp nghiệm 2D (hay hiện `!`). Giảm độ sáng phòng chiếu vào màn hình để bớt lóa.
 
 - Cầm bảng trong vùng tay sẽ cử động, sao cho **cả hai** camera cùng thấy (mỗi camera ≥ 10 góc).
 - Chương trình tự chụp khi bảng đã dời > 40 px và cách lần trước > 0,8 s. Đổi vị trí và nghiêng bảng giữa các lần;

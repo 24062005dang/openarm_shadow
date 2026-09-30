@@ -46,22 +46,47 @@ class OpenCVSource:
             self.cap = cv2.VideoCapture(int(source) if is_index else source)
         if not self.cap.isOpened():
             raise SystemExit(f"Không mở được nguồn video: {source}")
-        if fourcc:
-            self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*str(fourcc)))   # đặt TRƯỚC kích thước
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-        if fps:
-            self.cap.set(cv2.CAP_PROP_FPS, float(fps))
+        self.warning = None
+        if is_index:
+            self._configure_webcam(int(source), width, height, fourcc, fps)
+        else:
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         if is_index and v4l2:
             for e in set_v4l2_controls(f"/dev/video{int(source)}", v4l2):
                 print(f"Cảnh báo webcam {source}: {e}")
         self.mode = self.describe()
 
-    def describe(self):
+    def _fourcc(self):
         cc = int(self.cap.get(cv2.CAP_PROP_FOURCC))
-        fcc = "".join(chr((cc >> 8 * i) & 0xFF) for i in range(4)) if cc else "?"
+        return "".join(chr((cc >> 8 * i) & 0xFF) for i in range(4)) if cc else "?"
+
+    def _configure_webcam(self, index, width, height, fourcc, fps):
+        """Đặt định dạng/kích thước/fps rồi KIỂM TRA bằng một khung thật. Tuỳ bản OpenCV/driver, định dạng phải đặt
+        trước hoặc sau kích thước, và đặt fps có thể làm driver quay về chế độ mặc định: thử lần lượt các thứ tự."""
+        cc = cv2.VideoWriter_fourcc(*str(fourcc)) if fourcc else None
+        W, H, F, P = ("w", width), ("h", height), ("fourcc", cc), ("fps", fps)
+        orders = [[F, W, H, P], [W, H, F, P], [F, W, H], [W, H, F]]
+        props = {"w": cv2.CAP_PROP_FRAME_WIDTH, "h": cv2.CAP_PROP_FRAME_HEIGHT, "fourcc": cv2.CAP_PROP_FOURCC,
+                 "fps": cv2.CAP_PROP_FPS}
+        for order in orders:
+            for key, val in order:
+                if val:
+                    self.cap.set(props[key], float(val) if key == "fps" else val)
+            ok, img = self.cap.read()             # nhiều driver chỉ áp dụng chế độ mới khi đọc khung đầu
+            size_ok = ok and img.shape[1] == int(width) and img.shape[0] == int(height)
+            fmt_ok = not fourcc or self._fourcc().upper() == str(fourcc).upper()
+            if size_ok and fmt_ok:
+                return
+        got = self.describe()
+        self.warning = (f"webcam {index} không chạy được {width}x{height}"
+                        + (f" {fourcc}" if fourcc else "") + f", đang chạy {got}. Xem chế độ webcam hỗ trợ: "
+                        f"v4l2-ctl -d /dev/video{index} --list-formats-ext (hoặc scripts/webcam_check.py)")
+        print("Cảnh báo:", self.warning)
+
+    def describe(self):
         return (f"{int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))} "
-                f"{fcc} {self.cap.get(cv2.CAP_PROP_FPS):.0f} fps")
+                f"{self._fourcc()} {self.cap.get(cv2.CAP_PROP_FPS):.0f} fps")
 
     def read(self):
         ok, bgr = self.cap.read()
