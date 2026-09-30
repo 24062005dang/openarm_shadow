@@ -9,8 +9,11 @@
     python scripts/shadow.py --config my.yaml --record run1.npz
 """
 import argparse
+import os
 import sys
 from pathlib import Path
+
+os.environ.setdefault("GLOG_minloglevel", "2")   # ẩn log INFO/WARNING của MediaPipe để thấy thông báo thật
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 

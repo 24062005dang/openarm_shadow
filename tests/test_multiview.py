@@ -264,3 +264,35 @@ def test_webcam_calibration_size_is_checked(tmp_path):
         check_image_size(front, np.zeros((720, 1280, 3), np.uint8))
     side.set_realsense_intrinsics({"fx": 600, "fy": 600, "ppx": 320, "ppy": 240})
     check_image_size(side, np.zeros((720, 1280, 3), np.uint8))     # RealSense: nội tham số lấy từ SDK
+
+
+def test_camera_stall_is_reported(monkeypatch):
+    """Webcam ngừng gửi khung: read() trả False kèm lý do (camera nào, bao nhiêu khung/lỗi), không thoát im lặng."""
+    import time as _time
+    import openarm_shadow.sources as sources
+    from openarm_shadow.multiview import MultiCameraSource
+
+    class Fake:
+        def __init__(self, source, *a):
+            self.n, self.dead = 0, source == 0
+        def read(self):
+            _time.sleep(0.01)
+            self.n += 1
+            if self.dead and self.n > 3:
+                raise RuntimeError("Frame didn't arrive")
+            return True, types.SimpleNamespace(bgr=np.zeros((4, 4, 3), np.uint8), depth_m=None, intrinsics=None)
+        def close(self):
+            pass
+
+    monkeypatch.setattr(sources, "OpenCVSource", Fake)
+    cfg = {"fusion": {"cameras": [{"name": "front", "source": 0}, {"name": "side45", "source": 1}]},
+           "camera": {"width": 640, "height": 480}}
+    src = MultiCameraSource(cfg)
+    try:
+        ok, _ = src.read(timeout=1.0)
+        assert ok
+        oks = [src.read(timeout=0.3)[0] for _ in range(5)]
+        assert not all(oks)
+        assert "front" in src.error and "Frame didn't arrive" in src.error
+    finally:
+        src.close()

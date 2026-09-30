@@ -110,7 +110,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
         ok, first = cap.read()
         if not ok:
             cap.close()
-            raise SystemExit("Không đọc được khung từ đủ các camera trong fusion.cameras")
+            raise SystemExit("Không đọc được khung từ đủ các camera trong fusion.cameras.\n" + (cap.error or ""))
         try:
             perc = MultiViewPerception.from_config(cfg, first)
         except BaseException:
@@ -165,6 +165,8 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
         while ctl.running:
             ok, sample = cap.read()
             if not ok:
+                print("DỪNG: mất khung camera.", getattr(cap, "error", None) or
+                      "Nguồn video hết khung hoặc mất kết nối.")
                 break
             if multi:
                 frame_bgr = None
@@ -292,6 +294,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                     ctl = Controller(robot, gate, cfg["robot"]["control_hz"])
                     ctl.start()
                 elif k in (ord("q"), 27):
+                    print("Thoát (phím q/Esc).")
                     break
     finally:
         ctl.running = False

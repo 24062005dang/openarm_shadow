@@ -339,6 +339,8 @@ class MultiCameraSource:
         # Độ trễ cố định của từng camera (s): webcam laptop thường trả khung chậm hơn RealSense vài chục ms.
         self.latency = [float(c.get("latency_s", 0.0)) for c in fc["cameras"]]
         self.buf = [deque(maxlen=6) for _ in self.srcs]
+        self.stats = [{"frames": 0, "fails": 0, "error": None} for _ in self.srcs]   # để báo lỗi khi mất camera
+        self.error = None
         self.cond = threading.Condition()
         self.running = True
         self.last_ref_t = -1.0
@@ -347,12 +349,18 @@ class MultiCameraSource:
             th.start()
 
     def _loop(self, i):
+        st = self.stats[i]
         while self.running:
-            ok, s = self.srcs[i].read()
+            try:
+                ok, s = self.srcs[i].read()
+            except Exception as e:           # vd RealSense "Frame didn't arrive": thử tiếp, ghi lại để báo
+                ok, st["error"] = False, f"{type(e).__name__}: {e}"
             t = time.monotonic() - self.latency[i]
             if not ok:
+                st["fails"] += 1
                 time.sleep(0.005)
                 continue
+            st["frames"] += 1
             s.bgr = np.ascontiguousarray(s.bgr).copy()   # không giữ buffer của driver
             with self.cond:
                 self.buf[i].append((t, s))
@@ -364,6 +372,7 @@ class MultiCameraSource:
             while not (self.buf[0] and self.buf[0][-1][0] > self.last_ref_t):
                 left = deadline - time.monotonic()
                 if left <= 0 or not self.running:
+                    self.error = self.describe_stall(timeout)
                     return False, None
                 self.cond.wait(left)
             t_ref, ref = self.buf[0][-1]
@@ -384,6 +393,15 @@ class MultiCameraSource:
                 views.append(best[1])
                 skew = max(skew, abs(best[0] - t_ref))
         return True, MultiSample(views, t_ref, skew)
+
+    def describe_stall(self, timeout):
+        """Câu báo lỗi khi camera tham chiếu không gửi khung mới: số khung/lỗi của từng camera."""
+        parts = []
+        for name, st in zip(self.names, self.stats):
+            parts.append(f"  {name}: {st['frames']} khung, {st['fails']} lần đọc lỗi"
+                         + (f", lỗi cuối: {st['error']}" if st["error"] else ""))
+        return (f"Camera '{self.names[0]}' không gửi khung mới trong {timeout:.0f} s.\n" + "\n".join(parts) +
+                "\nKiểm tra: camera có bị app khác chiếm không, cáp/cổng USB, chỉ số webcam (list_cameras.py).")
 
     def close(self):
         self.running = False
