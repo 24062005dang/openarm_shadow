@@ -1,13 +1,16 @@
-# Fusion 2 camera (D455 + D435i)
+# Fusion 2 camera (webcam laptop + D435i)
+
+Cấu hình hiện tại (`config/fusion_2cam.yaml`): **webcam laptop trực diện** (camera 0, khung tham chiếu, không có
+depth) + **RealSense D435i lệch 45°** (có depth). D455 không dùng trong fusion.
 
 Chạy `--source multi`: mỗi camera chạy MediaPipe Pose + Hand riêng, rồi các điểm vai, khuỷu, cổ tay và 21 điểm bàn tay
 được **triangulate** trong một khung chung (khung camera đầu tiên). Depth của RealSense là bằng chứng phụ để phân xử
 khi hai camera không khớp nhau. Phần retarget, bộ lọc và SafetyGate không đổi: fusion chỉ thay khâu nhận diện.
 
 ```
-cam 0 (D455, trực diện) ─ luồng đọc ─┐                   ┌─ MediaPipe (cam 0) ─┐
-                                      ├─ ghép khung theo ─┤                     ├─ triangulate có trọng số
-cam 1 (D435i, lệch 45°) ─ luồng đọc ─┘   thời gian ≤25ms └─ MediaPipe (cam 1) ─┘  + depth phân xử + gate
+cam 0 (webcam laptop, trực diện) ─ luồng đọc ─┐                   ┌─ MediaPipe (cam 0) ─┐
+                                               ├─ ghép khung theo ─┤                     ├─ triangulate có trọng số
+cam 1 (D435i, lệch 45°, có depth) ─ luồng đọc ─┘   thời gian ≤25ms └─ MediaPipe (cam 1) ─┘  + depth phân xử + gate
                                                                                  │
                         retarget ◄── khung thân từ vai/hông 3D ◄── hướng bàn tay (tracker chống lật)
 ```
@@ -32,10 +35,14 @@ multical (LGPL). Tổng hợp đầy đủ: tài liệu "Multi-camera fusion" tr
 
 ## Đặt camera
 
-- **front** (camera đầu tiên, khung tham chiếu): D455 trực diện, cao ngang ngực, cách người 1,2–1,5 m.
-- **side45**: D435i lệch ~45° **về phía tay đang điều khiển** (tay phải), cùng độ cao, cùng khoảng cách.
-- Cả hai phải thấy trọn vai, hông và tay trong cả vùng cử động. Cắm mỗi camera vào một cổng USB 3 riêng
-  (`list_cameras.py` cảnh báo nếu camera chạy USB 2).
+- **front** (camera đầu tiên, khung tham chiếu): webcam laptop trực diện. Kê laptop (hộp, chồng sách) cho webcam
+  cao ngang ngực, cách người 1,2–1,5 m; màn hình nghiêng sao cho webcam nhìn thẳng, không chúc xuống.
+- **side45**: D435i lệch ~45° **về phía tay đang điều khiển** (tay phải), cùng độ cao, cùng khoảng cách, cắm cổng
+  USB 3 (`list_cameras.py` cảnh báo nếu chạy USB 2).
+- Cả hai phải thấy trọn vai, hông và tay trong cả vùng cử động.
+- Sau khi hiệu chuẩn, **không gập/nghiêng màn hình laptop và không xê dịch laptop hay D435i**: webcam gắn vào màn
+  hình, chỉnh góc màn hình là camera 0 đổi hướng. Chạm vào là phải hiệu chuẩn lại.
+- Phòng đủ sáng: thiếu sáng thì webcam tự tăng thời gian phơi sáng, tụt xuống ~15 fps và ảnh nhoè khi tay cử động.
 - Hiệu chuẩn xong thì **không xê dịch camera**. Chạm vào chân máy là phải hiệu chuẩn lại.
 
 Không cần hiệu chuẩn camera ↔ robot: retarget dùng khung thân dựng từ vai và hông, nên chỉ cần hai camera
@@ -46,7 +53,9 @@ khớp nhau.
 ```bash
 source .venv/bin/activate
 
-# 1) Xem serial, điền vào config/fusion_2cam.yaml (thay SERIAL_D455, SERIAL_D435I)
+# 1) Xem chỉ số webcam laptop (dòng có tên kiểu "Integrated_Webcam_HD") và D435i.
+#    Cắm D435i cũng tạo thêm /dev/video*, nên webcam laptop không chắc là 0: sửa `source:` của front nếu khác.
+#    Chỉ có 1 RealSense nên serial của side45 để trống được.
 python scripts/list_cameras.py
 
 # 2) In bảng ChArUco: in 100% (không "fit to page"), dán lên tấm phẳng cứng.
@@ -72,9 +81,16 @@ python scripts/shadow.py --source multi --robot openarm --arms right \
 - Đủ 20 lần thì tự tính; phím `c` tính sớm (khi ≥ 8 lần), `q` thoát không lưu.
 - Kết quả in ra: góc lệch trục nhìn (nên ~45°), khoảng cách hai camera, sai số chiếu lại:
   < 3 px tốt · < 6 px tạm được · lớn hơn thì chụp lại. File ghi vào `config/cameras_calib.yaml`.
-- Webcam (không phải RealSense) được hiệu chuẩn luôn nội tham số từ chính các ảnh bảng. Khi đó cần **nghiêng bảng
-  nhiều** (tới ±45°) và phủ cả góc ảnh; thử giả lập với ít góc nghiêng cho lệch 2,9° / 6,6 cm. RealSense dùng nội
-  tham số của nhà sản xuất nên không bị vấn đề này.
+- **Webcam laptop cần hiệu chuẩn cả nội tham số** (tiêu cự, tâm ảnh, méo ống kính), vì không có số của nhà sản
+  xuất như RealSense. Màn hình hiện `front noi tham so: N/20 anh`. Lúc đầu đưa bảng **sát webcam (40–60 cm)**,
+  **nghiêng nhiều** (tới ±45° cả hai chiều) và đưa bảng qua các góc ảnh; lúc này D435i không cần thấy bảng. Sau đó
+  mới lùi ra vùng tay để chụp chung cho hai camera. Chương trình chỉ tính khi đủ cả hai phần.
+  - Giả lập: có pha nghiêng nhiều → lệch 0,4° / 0,5 cm; chỉ nghiêng ít → lệch 2,9° / 6,6 cm. Pha này quan trọng.
+  - Kết quả in `front: nội tham số webcam từ N ảnh, sai số X px, góc nhìn ngang Y°`: sai số nên < 0,5 px;
+    góc nhìn ngang webcam laptop thường 60–75°, lệch xa khoảng này là hiệu chuẩn hỏng.
+  - Nội tham số webcam được lưu kèm độ phân giải. Lần hiệu chuẩn sau (vd chỉ dời D435i) tự dùng lại, chỉ cần chụp
+    chung; thêm `--redo-intrinsics` nếu muốn làm lại. Khi chạy, nếu webcam cho ảnh khác độ phân giải lúc hiệu chuẩn
+    thì chương trình dừng và báo.
 
 ## Đọc màn hình
 
@@ -107,7 +123,7 @@ Hiệu chuẩn tay tự động (tay thả xuôi, lòng bàn tay vào đùi) v�
    còn lại khớp nhất; độ tin cậy × 0,5.
 4. Hai camera khớp: depth trong `depth_consistency_m` (4 cm) thì thêm vào với trọng số `depth_weight`.
    Depth gần hơn = vật che (ngón che ngón), bỏ qua. Depth xa hơn = cờ `!`.
-5. Chỉ 1 camera thấy: dùng được khi camera đó có depth (như chế độ D455 đơn).
+5. Chỉ 1 camera thấy: dùng được khi camera đó có depth (ở cấu hình này: chỉ D435i).
 
 Hướng bàn tay: 21 điểm đã triangulate → mặt phẳng lòng bàn tay → `HandOrientationTracker` làm mượt, sửa dấu khi
 cả hai camera nhìn cạnh bàn tay, và chỉ chấp nhận cú xoay > 100° khi nó kéo dài 4 khung liên tiếp.
@@ -119,11 +135,16 @@ cả hai camera nhìn cạnh bàn tay, và chỉ chấp nhận cú xoay > 100° 
   `models/pose_landmarker_lite.task` (đã có sẵn sau `download_models.sh`).
 - Với đúng 2 camera, lỗi nằm **dọc đường epipolar** không phát hiện được bằng hình học (hai tia vẫn cắt nhau, chỉ
   sai độ sâu). Depth giúp được một phần (cờ `!`); camera thứ 3 mới giải quyết triệt để.
-- Đồng bộ bằng phần mềm (dấu thời gian máy tính), không phải hardware sync. Cử động rất nhanh có thể lệch vài cm.
-- Hai RealSense chiếu IR cùng lúc có thể nhiễu depth của nhau khi nhìn cùng vùng; thường chấp nhận được với D4xx,
-  nếu depth lỗ chỗ thì tắt emitter một camera.
+- Đồng bộ bằng phần mềm (dấu thời gian máy tính), không phải hardware sync. Webcam laptop thường trả khung **trễ
+  hơn** RealSense vài chục ms; khi cử động nhanh, điểm 3D (nhất là cổ tay) bị kéo lệch. Có tuỳ chọn `latency_s` cho
+  từng camera trong `fusion.cameras` (mặc định 0) để bù; chưa có công cụ đo tự động. Nếu tay đứng yên thì chấm tím
+  khớp mà vẫy nhanh thì lệch và cột `px` tăng vọt, thử `latency_s: 0.03`–`0.06` cho front và so sánh.
+- Camera 0 (webcam) không có depth: điểm chỉ webcam thấy (D435i bị che) thì không dùng được; điểm chỉ D435i thấy
+  vẫn dùng được nhờ depth.
+- Chế độ 1 camera `--source realsense` vẫn còn (dùng camera RealSense đang cắm, giờ là D435i); fusion không liên quan.
 - Test giả lập (`tests/test_multiview.py`): triangulate, depth phân xử, cờ mâu thuẫn, chống lật lòng bàn tay khi xoay
-  cổ tay 360°, hiệu chuẩn ChArUco (sai < 0,5° / 1 cm), luồng đầy đủ với camera giả. Chưa thử trên camera thật.
+  cổ tay 360°, hiệu chuẩn ChArUco (sai < 0,5° / 1 cm), luồng đầy đủ với camera giả, kiểm tra độ phân giải webcam.
+  Chạy thử hiệu chuẩn với webcam méo ống kính làm camera 0: 0,4° / 0,5 cm. Chưa thử trên camera thật.
 
 ## An toàn khi chạy robot thật
 

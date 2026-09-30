@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
-"""Liệt kê camera: RealSense (tên, serial, USB) và webcam OpenCV mở được (chỉ số 0..5).
+"""Liệt kê camera: RealSense (tên, serial, USB) và webcam OpenCV mở được (chỉ số, tên thiết bị).
 
     python scripts/list_cameras.py
-Điền serial vào fusion.cameras trong config (vd config/fusion_2cam.yaml).
+Điền chỉ số webcam laptop và serial D435i vào fusion.cameras (config/fusion_2cam.yaml).
 """
-import cv2
+import os
+from pathlib import Path
+
+os.environ.setdefault("OPENCV_LOG_LEVEL", "SILENT")    # thử mở chỉ số không có camera thì OpenCV in cảnh báo
+import cv2  # noqa: E402
+
+
+def v4l2_name(i):
+    """Tên thiết bị /dev/video<i> trên Linux (vd 'Integrated_Webcam_HD', 'Intel(R) RealSense(TM) Depth Ca...')."""
+    f = Path(f"/sys/class/video4linux/video{i}/name")
+    return f.read_text().strip() if f.is_file() else ""
 
 
 def main():
@@ -19,13 +29,17 @@ def main():
                   + ("   <-- USB 2: đổi cổng/cáp USB 3" if str(usb).startswith("2") else ""))
     except ImportError:
         print("Chưa cài pyrealsense2 (pip install pyrealsense2)")
-    print("Webcam OpenCV (RealSense cũng có thể hiện ở đây, bỏ qua các chỉ số đó):")
-    for i in range(6):
+    print("Webcam OpenCV (chỉ số dùng cho 'source:'; các dòng RealSense thì bỏ qua):")
+    linux = Path("/sys/class/video4linux").is_dir()
+    for i in range(10):
+        name = v4l2_name(i)
+        if "realsense" in name.lower() or (linux and not Path(f"/dev/video{i}").exists()):
+            continue
         cap = cv2.VideoCapture(i)
         if cap.isOpened():
             ok, img = cap.read()
             if ok:
-                print(f"  chỉ số {i}: {img.shape[1]}x{img.shape[0]}")
+                print(f"  chỉ số {i}: {img.shape[1]}x{img.shape[0]}  {name}")
         cap.release()
 
 

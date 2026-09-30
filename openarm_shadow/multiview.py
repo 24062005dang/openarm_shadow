@@ -49,6 +49,7 @@ class CameraModel:
     K: np.ndarray | None = None
     dist: np.ndarray | None = None
     rs_intr: object = None
+    size: tuple | None = None          # (w, h) lúc hiệu chuẩn nội tham số webcam
 
     def set_realsense_intrinsics(self, intr):
         self.rs_intr = intr
@@ -131,8 +132,20 @@ def load_calibration(path, names):
         cm = CameraModel(n, np.asarray(c["R"], float), np.asarray(c["t"], float))
         if c.get("K") is not None:
             cm.K, cm.dist = np.asarray(c["K"], float), np.asarray(c.get("dist") or np.zeros(5), float)
+        cm.size = tuple(c["size"]) if c.get("size") else None
         cams.append(cm)
     return cams
+
+
+def check_image_size(cam, bgr):
+    """Nội tham số webcam chỉ đúng ở đúng độ phân giải lúc hiệu chuẩn. Lệch -> dừng, không chạy với số sai."""
+    size = getattr(cam, "size", None)
+    if cam.rs_intr is not None or not size:
+        return
+    got = (int(bgr.shape[1]), int(bgr.shape[0]))
+    if got != tuple(int(v) for v in size):
+        raise SystemExit(f"Camera '{cam.name}' đang cho ảnh {got[0]}x{got[1]} nhưng được hiệu chuẩn ở "
+                         f"{size[0]}x{size[1]}.\nĐặt camera.width/height trong config cho khớp, hoặc hiệu chuẩn lại.")
 
 
 # ----------------------------------------------------------------------------------------------------------
@@ -323,6 +336,8 @@ class MultiCameraSource:
         except BaseException:
             self.close()
             raise
+        # Độ trễ cố định của từng camera (s): webcam laptop thường trả khung chậm hơn RealSense vài chục ms.
+        self.latency = [float(c.get("latency_s", 0.0)) for c in fc["cameras"]]
         self.buf = [deque(maxlen=6) for _ in self.srcs]
         self.cond = threading.Condition()
         self.running = True
@@ -334,7 +349,7 @@ class MultiCameraSource:
     def _loop(self, i):
         while self.running:
             ok, s = self.srcs[i].read()
-            t = time.monotonic()
+            t = time.monotonic() - self.latency[i]
             if not ok:
                 time.sleep(0.005)
                 continue
@@ -416,6 +431,7 @@ class MultiViewPerception:
             for cam, s in zip(cams, first_sample.views):
                 if s.intrinsics is not None:
                     cam.set_realsense_intrinsics(s.intrinsics)
+                check_image_size(cam, s.bgr)
         per_view = [Perception(cfg["models"]["pose"], cfg["models"]["hand"], min_conf=cfg["models"]["min_conf"],
                                orientation_cfg=cfg.get("orientation")) for _ in names]
         return cls(per_view, cams, fc)

@@ -247,3 +247,20 @@ def test_charuco_extrinsics_recovered():
     assert ang < 0.5 and np.linalg.norm(t - cams[1].t) < 0.01
     est = CameraModel("side45", R, t, K.copy(), np.zeros(5))
     assert reprojection_rms_px(board, cams[0], est, dets) < 2.0
+
+
+def test_webcam_calibration_size_is_checked(tmp_path):
+    """Nội tham số webcam chỉ đúng ở độ phân giải lúc hiệu chuẩn: lệch thì dừng, không chạy với số sai."""
+    import yaml
+    from openarm_shadow.multiview import check_image_size, load_calibration
+    f = tmp_path / "calib.yaml"
+    f.write_text(yaml.safe_dump({"cameras": {
+        "front": {"R": np.eye(3).tolist(), "t": [0, 0, 0], "K": K.tolist(), "dist": [0] * 5, "size": [640, 480]},
+        "side45": {"R": np.eye(3).tolist(), "t": [0.5, 0, 0]}}}))
+    front, side = load_calibration(f, ["front", "side45"])
+    assert front.size == (640, 480) and side.size is None
+    check_image_size(front, np.zeros((480, 640, 3), np.uint8))
+    with pytest.raises(SystemExit):
+        check_image_size(front, np.zeros((720, 1280, 3), np.uint8))
+    side.set_realsense_intrinsics({"fx": 600, "fy": 600, "ppx": 320, "ppy": 240})
+    check_image_size(side, np.zeros((720, 1280, 3), np.uint8))     # RealSense: nội tham số lấy từ SDK

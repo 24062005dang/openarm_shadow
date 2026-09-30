@@ -93,8 +93,8 @@ Khi bàn tay xòe, point cloud lòng bàn tay được fit thành mặt phẳng 
 orientation. Trục đỏ = hướng ngón, xanh lá = ngang lòng bàn tay, xanh dương = pháp tuyến. `PLANE`, `LANDMARK`,
 `HOLD`, `NONE` lần lượt cho biết nguồn/ trạng thái orientation; dữ liệu này điều khiển J5–J7 trong mô phỏng.
 
-Dùng 2 camera (D455 trực diện + D435i lệch 45°): làm theo [`docs/FUSION.md`](docs/FUSION.md) — lấy serial bằng
-`scripts/list_cameras.py`, in bảng `scripts/make_charuco_board.py`, hiệu chuẩn 1 lần bằng
+Dùng 2 camera (webcam laptop trực diện + D435i lệch 45°): làm theo [`docs/FUSION.md`](docs/FUSION.md) — xem chỉ số
+webcam bằng `scripts/list_cameras.py`, in bảng `scripts/make_charuco_board.py`, hiệu chuẩn 1 lần bằng
 `scripts/calibrate_cameras.py`, rồi chạy `--source multi`. Robot thật: `--config config/first_real.yaml --config
 config/fusion_2cam.yaml` (thứ tự này).
 

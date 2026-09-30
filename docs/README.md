@@ -9,7 +9,7 @@ Mọi thứ nhóm và Claude đã tổng hợp, theo thứ tự nên đọc.
 | 3 | [`03_bringup_ubuntu.md`](03_bringup_ubuntu.md) | Bring-up trên Ubuntu 24.04 native qua SavvyCAN-FD-X2, API `openarm_can` |
 | 4 | [`SAFETY.md`](SAFETY.md) | Checklist bắt buộc trước khi chạy trên robot thật |
 | 5 | [`DESIGN.md`](DESIGN.md) | Thiết kế code: khung toạ độ, thuật toán retarget |
-| 5b | [`FUSION.md`](FUSION.md) | Fusion 2 camera (D455 + D435i): hiệu chuẩn ChArUco, chạy, giới hạn |
+| 5b | [`FUSION.md`](FUSION.md) | Fusion 2 camera (webcam laptop + D435i): hiệu chuẩn ChArUco, chạy, giới hạn |
 | 6 | [`04_du_lieu.md`](04_du_lieu.md) | Cần dữ liệu gì, nguồn nào, license |
 | 7 | [`05_diem_moi_2_bai_bao.md`](05_diem_moi_2_bai_bao.md) | Điểm mới của SEW-Mimic và Hand Shadowing, đã đưa gì vào repo |
 | 8 | [`06_tai_lieu_tham_khao.md`](06_tai_lieu_tham_khao.md) | Danh sách bài báo, repo, dữ liệu |

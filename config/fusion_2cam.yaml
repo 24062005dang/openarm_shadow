@@ -1,21 +1,30 @@
-# Fusion 2 camera cho 1 tay (tay phải): camera 0 trực diện, camera 1 lệch ~45° về phía tay phải.
-#   python scripts/list_cameras.py                       # xem serial RealSense, điền vào dưới
-#   python scripts/calibrate_cameras.py --config config/fusion_2cam.yaml   # hiệu chuẩn 1 lần
+# Fusion 2 camera cho 1 tay (tay phải):
+#   camera 0 = webcam laptop, TRỰC DIỆN (khung tham chiếu, không có depth)
+#   camera 1 = RealSense D435i, lệch ~45° về phía tay phải (có depth)
+#
+#   python scripts/list_cameras.py                       # xem chỉ số webcam laptop + serial D435i
+#   python scripts/calibrate_cameras.py --config config/fusion_2cam.yaml   # hiệu chuẩn (webcam: cả nội tham số)
 #   python scripts/shadow.py --source multi --arms right --config config/fusion_2cam.yaml
 #   robot thật: thêm --config config/first_real.yaml TRƯỚC file này, vd
 #   python scripts/shadow.py --source multi --robot openarm --arms right \
 #       --config config/first_real.yaml --config config/fusion_2cam.yaml
 #
 # Camera đầu tiên là khung tham chiếu và là camera để tự hiệu chuẩn tay ("lòng bàn tay nhìn camera").
-# Hai RealSense bắt buộc có serial. Webcam: source là chỉ số (vd 0), serial bỏ trống.
+# Khi cắm D435i, nó cũng tạo thêm vài /dev/video*: webcam laptop KHÔNG chắc là chỉ số 0, kiểm tra bằng list_cameras.
 
 fusion:
   cameras:
-    - {name: front, source: realsense, serial: "SERIAL_D455"}    # D455 trực diện, ngang vai/hông, cách người 1,2-1,5 m
-    - {name: side45, source: realsense, serial: "SERIAL_D435I"}  # D435i lệch 45°, cùng độ cao, cùng khoảng cách
+    # Webcam laptop trực diện: kê laptop cho webcam cao ngang ngực, cách người 1,2-1,5 m, thấy trọn vai-hông-tay.
+    - {name: front, source: 0, latency_s: 0.0}
+    # D435i lệch 45°, cùng độ cao, cùng khoảng cách. Chỉ có 1 RealSense nên serial để trống cũng được.
+    - {name: side45, source: realsense, serial: ""}
   calib_file: config/cameras_calib.yaml
 
 camera:
+  # Độ phân giải webcam: phải giống lúc hiệu chuẩn (chương trình kiểm tra). 640x480 để webcam giữ 30 fps
+  # (1280x720 ở định dạng mặc định YUYV nhiều webcam laptop chỉ ra ~10 fps).
+  width: 640
+  height: 480
   realsense:
     width: 640
     height: 480
