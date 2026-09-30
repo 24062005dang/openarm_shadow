@@ -17,10 +17,16 @@ fusion:
     # Webcam laptop trực diện: kê laptop cho webcam cao ngang ngực, cách người 1,2-1,5 m, thấy trọn vai-hông-tay.
     # weight: độ tin cậy so với camera khác (mặc định 1). Webcam laptop mờ, 640x480 -> 0.7: khi hai camera
     # lệch nhau thì nghiêng về D435i. Webcam tốt hơn thì đặt lại 1.0.
-    - {name: front, source: 0, latency_s: 0.0, weight: 0.7}
+    - {name: front, source: 0, latency_s: 0.0, weight: 0.7, pose: true}
     # D435i lệch 45°, cùng độ cao, cùng khoảng cách. Chỉ có 1 RealSense nên serial để trống cũng được.
-    - {name: side45, source: realsense, serial: ""}
+    # pose: false -> D435i chỉ chạy Hand (bàn tay + depth), không chạy Pose: nhẹ gần một nửa.
+    - {name: side45, source: realsense, serial: "", pose: false}
   calib_file: config/cameras_calib.yaml
+  # Chế độ nhẹ (như bản Openarm_Teleop chạy mượt trên robot thật): vai/khuỷu/cổ tay từ Pose webcam, bàn tay +
+  # hướng bàn tay hợp nhất từ 2 camera + depth. Muốn triangulate cả vai/khuỷu: body_source: triangulate và
+  # đặt pose: true cho side45 (nặng hơn gần gấp đôi phần Pose).
+  body_source: front
+  pair_wait_s: 0.0           # không chờ camera phụ: lấy khung gần nhất đang có -> vòng lặp không khựng
 
 camera:
   # Webcam laptop Latitude 5490 (Integrated_Webcam_HD) chỉ có YUYV, tối đa 640x480 @ 30 fps (đo bằng
@@ -39,7 +45,11 @@ camera:
     width: 640
     height: 480
     fps: 30
+    spatial_filter: false    # tắt bộ lọc spatial (tốn CPU) để D435i giữ gần 30 fps; median quanh điểm đã khử nhiễu
 
 models:
-  # 2 camera x (Pose + Hand) trên CPU laptop: nếu chậm (< 10 fps) đổi sang bản lite
+  # CPU laptop: Pose chỉ chạy trên webcam, 1/2 khung (Hand mỗi khung); Pose hụt <= 6 lần vẫn giữ kết quả cũ.
+  # Vẫn chậm (< 12 fps) thì đổi sang bản lite.
   pose: models/pose_landmarker_full.task
+  pose_interval: 2
+  pose_hold_frames: 6

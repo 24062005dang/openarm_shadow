@@ -52,6 +52,15 @@ fusion:
   # alpha: nhận hướng mới khi nhìn kém (mượt), alpha_max: khi nhìn rõ (ít trễ để cổ tay theo kịp cánh tay)
   orientation: {alpha: 0.6, alpha_max: 0.85, hold_frames: 8, ambiguous_quality: 0.35, max_jump_deg: 100,
                 confirm_frames: 4}
+  # triangulate: vai/khuỷu/cổ tay triangulate từ mọi camera (mọi camera chạy Pose, nặng hơn);
+  # front: vai/khuỷu/cổ tay từ Pose camera 0, camera khác chỉ chạy Hand (nhẹ, mượt; như bản Openarm_Teleop)
+  body_source: triangulate
+  pair_wait_s: 0.025         # chờ khung khớp của camera phụ tối đa; 0 = không chờ (lấy khung gần nhất đang có)
+  # Hướng bàn tay nhiều nguồn (handfusion.OrientationFusion): đổi sang hướng cách > switch_deg cần switch_frames
+  # khung liên tiếp (trong lúc chờ cổ tay đứng yên); nguồn lệch > max_disagree_deg bị bỏ; alpha -> fast_alpha khi
+  # xoay nhanh (> fast_angle_deg/khung) để không trễ; mất tay giữ hold_frames khung (cổ tay đứng yên) rồi mới LOST.
+  orientation_fusion: {temporal_weight: 1.5, switch_deg: 100, switch_frames: 3, max_disagree_deg: 70,
+                       alpha: 0.65, fast_alpha: 0.92, fast_angle_deg: 60, hold_frames: 12}
   hand:                      # làm sạch bàn tay 3D (openarm_shadow/handfusion.py)
     wrist_gate_px: 60        # bàn tay ở 1 camera xa cổ tay Pose chiếu vào camera đó hơn mức này -> bỏ (px quy đổi 640x480)
     size_ref_px: 35          # bàn tay nhỏ hơn (cổ tay -> gốc ngón giữa, px) thì trọng số giảm (tối thiểu 0,4)
@@ -65,6 +74,8 @@ models:
   pose: models/pose_landmarker_full.task
   hand: models/hand_landmarker.task
   min_conf: 0.5
+  pose_interval: 1           # Pose chạy 1/N khung (Hand vẫn mỗi khung); 2 = nhẹ gần một nửa phần Pose
+  pose_hold_frames: 0        # Pose hụt tối đa chừng này lần chạy vẫn giữ kết quả cũ (không mất tay khi Pose chớp)
 
 calibration:
   hand_auto:

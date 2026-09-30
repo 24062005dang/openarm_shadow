@@ -28,10 +28,10 @@ import numpy as np
 import yaml
 
 from .geometry import unit
-from .handfusion import HandShape, PalmModel, hand_forearm_angle
+from .handfusion import HandShape, OrientationFusion, PalmModel, hand_forearm_angle
 from .perception import (ArmObs, Frame, H_INDEX_MCP, H_INDEX_TIP, H_MIDDLE_MCP, H_PINKY_MCP, H_THUMB_TIP,
                          H_WRIST, L_EL, L_HIP, L_SH, L_WR, R_EL, R_HIP, R_SH, R_WR, ARM_IDX, body_frame,
-                         open_finger_count, rotation_distance, sample_depth,
+                         open_finger_count, palm_frame_from_depth, rotation_distance, sample_depth,
                          slerp_rotation)
 
 BODY_IDS = (L_SH, R_SH, L_EL, R_EL, L_WR, R_WR, L_HIP, R_HIP)
@@ -335,6 +335,8 @@ class MultiCameraSource:
         self.tol = float(fc.get("sync_tol_s", 0.025))
         # Khung của camera phụ cũ hơn mức này so với camera tham chiếu = camera đó đang treo: không dùng khung cũ.
         self.stale_s = float(fc.get("stale_s", max(4 * self.tol, 0.1)))
+        # Chờ tối đa bao lâu cho khung khớp của camera phụ; 0 = không chờ, lấy khung gần nhất đang có (không khựng)
+        self.pair_wait = float(fc.get("pair_wait_s", self.tol))
         n_rs = sum(str(c.get("source", "realsense")).lower() in REALSENSE_NAMES for c in fc["cameras"])
         self.srcs = []
         try:
@@ -400,7 +402,7 @@ class MultiCameraSource:
             self.last_ref_t = t_ref
             views, skew, stale = [ref], 0.0, [False]
             for i in range(1, len(self.buf)):
-                wait_until = time.monotonic() + self.tol
+                wait_until = time.monotonic() + self.pair_wait
                 while True:
                     cands = list(self.buf[i])
                     best = min(cands, key=lambda ts: abs(ts[0] - t_ref)) if cands else None
@@ -441,6 +443,35 @@ class MultiCameraSource:
 # ----------------------------------------------------------------------------------------------------------
 # Perception nhiều camera
 # ----------------------------------------------------------------------------------------------------------
+def view_options(cfg):
+    """Tuỳ chọn Perception cho từng camera trong fusion.cameras.
+
+    - body_source "front": chỉ camera 0 chạy Pose (các camera khác chỉ Hand); "triangulate": mọi camera chạy Pose.
+      fusion.cameras[i].pose ghi đè được (trừ khi triangulate cần Pose ở mọi camera).
+    - models.pose_interval / pose_hold_frames: Pose chạy thưa + giữ kết quả khi hụt ngắn.
+    - Chỉ điều khiển 1 tay: mỗi camera tìm 1 bàn tay và luôn coi là bàn tay người của tay robot đó.
+    """
+    fc, mc, mp = cfg["fusion"], cfg["models"], cfg.get("mapping", {})
+    front = str(fc.get("body_source", "triangulate")) == "front"
+    arms = list(mp.get("robot_arms", ["right", "left"]))
+    force = None
+    if len(arms) == 1:
+        force = arms[0] if mp.get("mode", "direct") == "direct" else ("left" if arms[0] == "right" else "right")
+    out = []
+    for i, c in enumerate(fc["cameras"]):
+        pose = True if not front else bool(c.get("pose", i == 0))
+        # Camera có Pose tìm 2 bàn tay để gán theo cổ tay (không nhận nhầm tay kia); camera chỉ Hand tìm 1.
+        out.append({"pose_enabled": pose, "pose_interval": int(mc.get("pose_interval", 1)),
+                    "pose_hold_frames": int(mc.get("pose_hold_frames", 0)), "force_hand_side": force,
+                    "num_hands": 1 if (force and not pose) else 2})
+        if not pose and force is None:
+            print(f"Cảnh báo: camera '{c.get('name', i)}' chỉ chạy Hand nhưng đang điều khiển 2 tay -> không biết bàn "
+                  "tay nào là tay nào, bàn tay ở camera này bị bỏ. Dùng --arms right (hoặc left).")
+    if front and not out[0]["pose_enabled"]:
+        raise SystemExit("fusion.body_source: front cần camera đầu tiên chạy Pose (fusion.cameras[0].pose: true)")
+    return out
+
+
 class MultiViewPerception:
     """Chạy một Perception (MediaPipe) cho mỗi camera rồi hợp nhất bằng triangulation.
 
@@ -457,7 +488,11 @@ class MultiViewPerception:
         self.min_vis = float(fc.get("min_visibility", 0.3))
         self.depth_cfg = fc.get("depth", {})
         oc = fc.get("orientation", {})
-        self.trackers = {s: HandOrientationTracker(**oc) for s in ("right", "left")}
+        self.trackers = {s: HandOrientationTracker(**oc) for s in ("right", "left")}   # (cũ, giữ cho test)
+        self.orient = {s: OrientationFusion(**fc.get("orientation_fusion", {})) for s in ("right", "left")}
+        # body_source: "triangulate" = vai/khuỷu/cổ tay triangulate từ mọi camera (mọi camera chạy Pose);
+        # "front" = lấy từ Pose của camera 0 (điểm world MediaPipe), camera khác chỉ chạy Hand -> nhẹ, mượt.
+        self.body_source = str(fc.get("body_source", "triangulate"))
         hc = fc.get("hand", {})
         # Trọng số tin cậy từng camera (fusion.cameras[i].weight, mặc định 1): webcam mờ đặt thấp hơn.
         cams_cfg = fc.get("cameras") or []
@@ -491,7 +526,8 @@ class MultiViewPerception:
                     cam.set_realsense_intrinsics(s.intrinsics)
                 check_image_size(cam, s.bgr)
         per_view = [Perception(cfg["models"]["pose"], cfg["models"]["hand"], min_conf=cfg["models"]["min_conf"],
-                               orientation_cfg=cfg.get("orientation")) for _ in names]
+                               orientation_cfg=cfg.get("orientation"), **opts)
+                    for opts in view_options(cfg)]
         return cls(per_view, cams, fc)
 
     def close(self):
@@ -505,7 +541,7 @@ class MultiViewPerception:
     def _view_obs(self, v, sample, fr):
         cam = self.cams[v]
         h, w = sample.bgr.shape[:2]
-        o = {"pose": {}, "hand": {}}
+        o = {"pose": {}, "hand": {}, "size": np.array([w, h], float)}
         depth = sample.depth_m
         intr = sample.intrinsics
         dc = self.depth_cfg
@@ -546,6 +582,8 @@ class MultiViewPerception:
 
     # -- hợp nhất ----------------------------------------------------------------------------------------
     def fuse(self, views_obs, t):
+        if self.body_source == "front":
+            return self._fuse_front(views_obs, t)
         info = {"views": len(self.cams), "points": {}}
         W = np.full((33, 3), np.nan)
         vis = np.zeros(33)
@@ -561,8 +599,8 @@ class MultiViewPerception:
         arms = {"right": ArmObs(), "left": ArmObs()}
         if not (np.all(np.isfinite(W[[L_SH, R_SH]])) and min(vis[L_SH], vis[R_SH]) > 0):
             self._body_R = None                          # mất người: lần sau nhận khung thân mới
-            for s in self.trackers:
-                self.trackers[s].update(None, 0.0)
+            for s in self.orient:
+                self.orient[s].update(None)
             return Frame(arms, None, [], None, t, fusion=info), W
         if not np.all(np.isfinite(W[[L_HIP, R_HIP]])):
             vis[L_HIP] = vis[R_HIP] = 0.0
@@ -596,6 +634,80 @@ class MultiViewPerception:
             depth_used[side] = sum(info["points"][k]["depth"] > 0 for k in (i_s, i_e, i_w))
         return Frame(arms, None, [], Rb, t, depth_used=depth_used, body_origin=origin, fusion=info), W
 
+    def _fuse_front(self, views_obs, t):
+        """Vai/khuỷu/cổ tay + khung thân từ Pose camera 0 (điểm world MediaPipe, trục cùng hướng camera 0);
+        bàn tay hợp nhất từ mọi camera. Giống cách bản Openarm_Teleop chạy mượt trên robot thật."""
+        info = {"views": len(self.cams), "points": {}, "body": "front"}
+        W = np.full((33, 3), np.nan)
+        f0 = self.view_frames[0] if self.view_frames else None
+        arms = {"right": ArmObs(), "left": ArmObs()}
+        if f0 is None or f0.body_R is None:
+            for s in self.orient:
+                self.orient[s].update(None)
+                arms[s].hand_orientation_mode = "NONE"
+            return Frame(arms, None, [], None, t, fusion=info), W
+        Rb = f0.body_R
+        for side in ("right", "left"):
+            src, ob = f0.arms[side], arms[side]
+            ob.s, ob.e, ob.w = src.s, src.e, src.w
+            ob.conf["upper"], ob.conf["fore"] = src.conf["upper"], src.conf["fore"]
+            fore = Rb @ (src.w - src.e) if src.w is not None and src.e is not None else None
+            self._gate_front(side, f0, views_obs, info)
+            self._fuse_hand(side, ob, views_obs, Rb, info, np.zeros(3) if fore is not None else None, fore)
+            if ob.grip is None and src.grip is not None:
+                ob.grip = src.grip
+        return Frame(arms, None, [], Rb, t, depth_used={}, body_origin=f0.body_origin, fusion=info), W
+
+    def _gate_front(self, side, f0, views_obs, info):
+        """Chế độ front: bàn tay ở camera phụ (chỉ Hand, tự gán) phải khớp cổ tay Pose của camera 0:
+        - camera 0 cũng thấy bàn tay: triangulate cổ tay bàn tay từ 2 camera, sai số chiếu lại lớn -> camera phụ
+          đang thấy tay khác -> bỏ;
+        - camera 0 không thấy bàn tay: cổ tay từ depth của camera phụ chiếu vào camera 0 phải gần cổ tay Pose;
+          không có depth thì không kiểm chứng được -> bỏ."""
+        rejected = 0
+        cam0 = self.cams[0]
+        size0 = views_obs[0].get("size")
+        wr0 = None
+        if f0.pose_2d is not None and size0 is not None:
+            wr0 = f0.pose_2d[ARM_IDX[side][2], :2] * size0
+        h0 = views_obs[0]["hand"].get(side)
+        for v in range(1, len(views_obs)):
+            hv = views_obs[v]["hand"].get(side)
+            if hv is None:
+                continue
+            ok = False
+            if h0 is not None:
+                X = triangulate_weighted([(cam0, h0[0][H_WRIST], 1.0), (self.cams[v], hv[0][H_WRIST], 1.0)])
+                ok = X is not None and max(reprojection_px(cam0, X, h0[0][H_WRIST]),
+                                           reprojection_px(self.cams[v], X, hv[0][H_WRIST])) <= self.hand_gate_px
+            elif wr0 is not None and hv[2][H_WRIST] is not None:
+                p0 = cam0.project(np.asarray(hv[2][H_WRIST])[None])[0]
+                ok = bool(np.all(np.isfinite(p0))) and \
+                    np.linalg.norm(p0 - wr0) * REF_FX / max(cam0.fx, 1e-6) <= self.hand_gate_px
+            if not ok:
+                del views_obs[v]["hand"][side]
+                rejected += 1
+        info[f"hand_{side}_rejected"] = rejected
+
+    def _orientation_extras(self, side, views_obs, seen):
+        """Nguồn phụ cho hướng bàn tay (khung world): MediaPipe world từng camera, lòng bàn tay từ depth."""
+        extras = []
+        for v in seen:
+            cam = self.cams[v]
+            f = self.view_frames[v] if v < len(self.view_frames) else None
+            R_cam = getattr(f.arms[side], "hand_R_cam", None) if f is not None else None
+            if R_cam is not None:
+                extras.append((cam.R.T @ R_cam, 0.5, f"rgb:{cam.name}"))
+            lifted = views_obs[v]["hand"][side][2]
+            P = np.full((21, 3), np.nan)
+            for j in PALM_IDS:
+                if lifted[j] is not None:
+                    P[j] = lifted[j]
+            Rd, _ = palm_frame_from_depth(P, side=side)
+            if Rd is not None:
+                extras.append((Rd, 0.6, f"depth:{cam.name}"))
+        return extras
+
     def _gate_hands(self, side, wrist_w, views_obs, info):
         """Bỏ bàn tay ở camera nào mà cổ tay của nó xa cổ tay Pose (đã triangulate) chiếu vào camera đó."""
         rejected = 0
@@ -618,7 +730,7 @@ class MultiViewPerception:
         Trả vị trí cổ tay của bàn tay (world) hoặc None."""
         seen = [v for v, o in enumerate(views_obs) if side in o["hand"]]
         if not seen:
-            ob.hand_orientation_mode = self.trackers[side].update(None, 0.0)[1]
+            ob.hand_orientation_mode = self.orient[side].update(None)[1]
             info[f"hand_{side}"] = {"views": 0, "quality": 0.0, "mode": ob.hand_orientation_mode, "points": 0,
                                     "rejected": info.get(f"hand_{side}_rejected", 0)}
             return None
@@ -638,7 +750,10 @@ class MultiViewPerception:
                 pts[j], confs[j] = X, c
         pts, dropped = self.shapes[side].filter(pts)
         confs[~np.all(np.isfinite(pts), axis=1)] = 0.0
-        ob.hand_open_fingers = open_finger_count(pts)
+        # Số ngón xoè: từ điểm 3D; thiếu điểm (chỉ 1 camera thấy, không depth) thì lấy từ điểm world của từng camera
+        ob.hand_open_fingers = max([open_finger_count(pts)] +
+                                   [self.view_frames[v].arms[side].hand_open_fingers for v in seen
+                                    if v < len(self.view_frames)])
         if np.all(np.isfinite(pts[[H_WRIST, H_MIDDLE_MCP, H_THUMB_TIP, H_INDEX_TIP]])):
             ob.grip = float(np.linalg.norm(pts[H_THUMB_TIP] - pts[H_INDEX_TIP]) /
                             max(np.linalg.norm(pts[H_MIDDLE_MCP] - pts[H_WRIST]), 1e-6))
@@ -653,13 +768,17 @@ class MultiViewPerception:
                 face_v[v] = abs(float(raw_R[:, 2] @ unit(center - cam.center)))
             quality = max(face_v[v] for v in seen)
             self._facing[side] = face_v
-        R, mode = self.trackers[side].update(raw_R, quality)
-        ob.hand_orientation_mode = mode if raw_R is not None or mode != "HOLD" else f"HOLD {fit_mode}"
-        # Độ tin cậy: trung bình các điểm lòng bàn tay có mặt (đã gồm phạt khi hai camera mâu thuẫn), giảm khi
-        # chỉ còn 3 điểm; trust của camera chỉ dùng để trộn, không hạ độ tin cậy.
+        extras = [(Re, c, n) for Re, c, n in self._orientation_extras(side, views_obs, seen)
+                  if not (hand_forearm_angle(Re, elbow_w, wrist_w) > self.max_hand_forearm)]
+        # Độ tin cậy của nguồn 3D: trung bình các điểm lòng bàn tay (đã gồm phạt khi hai camera mâu thuẫn), giảm
+        # khi chỉ còn 3 điểm; trust của camera chỉ dùng để trộn, không hạ độ tin cậy.
         pc = confs[list(PALM_IDS)]
         n_ok = int(np.count_nonzero(pc > 0))
-        ob.conf["hand"] = (float(np.mean(pc[pc > 0]) * min(1.0, n_ok / 4)) if raw_R is not None and n_ok else 0.0)
+        palm_conf = float(np.mean(pc[pc > 0]) * min(1.0, n_ok / 4)) if raw_R is not None and n_ok else 0.0
+        R, mode, o_conf, used = self.orient[side].update(raw_R, max(palm_conf, 0.05), extras,
+                                                         base_strong=raw_R is not None and len(seen) >= 2)
+        ob.hand_orientation_mode = mode if (raw_R is not None or mode not in ("HOLD",)) else f"HOLD {fit_mode}"
+        ob.conf["hand"] = min(o_conf, palm_conf) if (used and used[0] == "3d") else o_conf
         if R is not None:
             ob.H = Rb.T @ R
             ob.hand_R_cam = R
@@ -673,7 +792,7 @@ class MultiViewPerception:
                                 "points": int(np.count_nonzero(np.all(np.isfinite(pts), axis=1))),
                                 "fit": fit_mode, "fit_mm": 1000 * fit_rms if np.isfinite(fit_rms) else np.nan,
                                 "bones_dropped": dropped, "forearm_deg": anat,
-                                "rejected": info.get(f"hand_{side}_rejected", 0)}
+                                "rejected": info.get(f"hand_{side}_rejected", 0), "sources": used}
         root = pts[H_WRIST]
         return root if np.all(np.isfinite(root)) and confs[H_WRIST] > 0 else None
 

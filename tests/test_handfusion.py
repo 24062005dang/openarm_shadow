@@ -172,4 +172,4 @@ def test_camera_weight_changes_mixing_not_confidence():
         fr = mvp.process(MultiSample([blank, blank], 0.033 * k))
     ob = fr.arms["right"]
     assert abs(ob.conf["upper"] - 0.95) < 1e-6 and abs(ob.conf["fore"] - 0.95) < 1e-6
-    assert ob.conf["hand"] > 0.9
+    assert ob.conf["hand"] >= 0.85

@@ -93,10 +93,31 @@ python scripts/calibrate_cameras.py --config config/fusion_2cam.yaml
 # 4) Mô phỏng trước
 python scripts/shadow.py --source multi --arms right --config config/fusion_2cam.yaml
 
-# 5) Robot thật: first_real.yaml TRƯỚC, fusion_2cam.yaml SAU (file sau ghi đè file trước)
+# 5) Robot thật lần đầu với fusion (cổ tay khoá): first_real.yaml TRƯỚC, fusion_2cam.yaml SAU
 python scripts/shadow.py --source multi --robot openarm --arms right \
     --config config/first_real.yaml --config config/fusion_2cam.yaml
+
+# 6) Mở cổ tay, bám nhanh (vẫn giữ giới hạn tốc độ, tăng tốc mềm, chặn bước nhảy):
+python scripts/shadow.py --source multi --robot openarm --arms right \
+    --config config/wrist_real_30.yaml --config config/fusion_2cam.yaml --config config/fusion_real_fast.yaml
 ```
+
+## Chế độ nhẹ `body_source: front` (mặc định trong fusion_2cam.yaml)
+
+Học từ bản Openarm_Teleop của nhóm (chạy mượt trên robot thật), giữ nguyên các lớp an toàn:
+
+| | Cách làm | Tác dụng |
+| --- | --- | --- |
+| Cánh tay | Vai/khuỷu/cổ tay từ Pose của webcam (điểm world MediaPipe) | Giống chế độ 1 camera đã chạy ổn trên robot |
+| Camera phụ | D435i chỉ chạy Hand (`pose: false`) | Bớt gần một nửa tính toán |
+| Pose | Chạy 1/2 khung (`pose_interval: 2`), hụt <= 6 lần vẫn giữ kết quả cũ | Nhanh hơn, không mất tay khi Pose chớp |
+| Bàn tay | Chỉ điều khiển 1 tay: mỗi camera tìm 1 bàn tay, luôn là tay đó; không dùng điểm handedness | Không mất tay khi mu/cạnh bàn tay quay về camera |
+| Ghép khung | `pair_wait_s: 0`: không chờ camera phụ | Vòng lặp không khựng |
+| Hướng bàn tay | `OrientationFusion`: 3D (Kabsch) + hướng từ điểm world từng camera + lòng bàn tay từ depth; 2 giả thuyết chống lật; đổi hướng > 100° cần 3 khung, trong lúc chờ cổ tay đứng yên | Không nhận sai hướng; xoay nhanh vẫn bám (làm mượt thích ứng) |
+
+Không lấy từ bản kia: tắt giới hạn tốc độ (`velocity_limit_enabled: false`), `engage_blend_s: 0` (robot lao tới
+mục tiêu trong 1 nhịp khi engage) và tắt chặn bước nhảy. `config/fusion_real_fast.yaml` thay vào đó nâng giới
+hạn cổ tay lên 90°/s (J1-J4 30-40°/s), tăng tốc mềm 1 s, giữ bước nhảy 0,15 s. Tăng dần khi đã chạy ổn.
 
 ### Hiệu chuẩn (bước 3)
 
@@ -128,8 +149,9 @@ là dấu hiệu hiệu chuẩn sai hoặc camera bị xê dịch). Các dòng c
 
 ```
 fusion 2 cam | lech khung 4 ms
-right: vai 2cam 0px | khuyu 2cam 1px | co tay 2cam 0px D !
-ban tay 2cam 21/21 diem, nhin ro 0.99, FUSED
+right: vai 2cam 0px | khuyu 2cam 1px | co tay 2cam 0px D !      (chế độ triangulate)
+right: vai/khuyu/co tay tu Pose camera 0                        (chế độ front)
+ban tay 2cam 21/21 diem, nhin ro 0.99, TRACKING, khop long tay 3mm | nguon: 3d+rgb:front+depth:side45
 ```
 
 - `lech khung`: độ lệch thời gian giữa hai khung đã ghép (chờ tối đa `sync_tol_s` = 25 ms cho khung khớp, không có
@@ -139,8 +161,9 @@ ban tay 2cam 21/21 diem, nhin ro 0.99, FUSED
 - `D`: đã dùng depth (khớp nghiệm 2D, hoặc phân xử khi hai camera mâu thuẫn).
 - `!`: depth nằm **xa hơn** nghiệm 2D → có mâu thuẫn không phân xử được; độ tin cậy điểm đó bị giảm một nửa.
 - `nhin ro`: mức lòng bàn tay quay về phía camera tốt nhất (1 = nhìn thẳng, 0 = nhìn cạnh).
-- Trạng thái hướng bàn tay: `FUSED` bình thường · `SIGN-FIX` cả hai camera nhìn cạnh bàn tay, đang giữ dấu úp/ngửa
-  theo khung trước · `HOLD` mất tay, giữ hướng cũ tối đa 8 khung · `NONE` không có.
+- Trạng thái hướng bàn tay: `TRACKING` >= 2 nguồn đồng ý · `DEGRADED` chỉ 1 nguồn (vẫn điều khiển) ·
+  `SWITCH?` hướng mới cách xa, đang chờ xác nhận (cổ tay đứng yên) · `HOLD` mất tay, giữ hướng cũ, cổ tay đứng yên
+  tối đa 12 khung · `LOST` mất hẳn. `nguon:` các nguồn được dùng (3d, rgb:<camera>, depth:<camera>).
 
 Hiệu chuẩn tay tự động (tay thả xuôi, lòng bàn tay vào đùi) vẫn như cũ, tính theo camera đầu tiên.
 

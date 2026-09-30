@@ -49,6 +49,7 @@ def main():
     if calib_path.is_file() and not args.redo_intrinsics:
         old = (yaml.safe_load(calib_path.read_text()) or {}).get("cameras", {})
     src = MultiCameraSource(cfg)
+    src.pair_wait = src.tol          # hiệu chuẩn cần khung chụp cùng lúc: luôn chờ khung khớp
     cams = [CameraModel(n) for n in names]
     samples, intr_dets, sizes = [], [[] for _ in cams], [None] * len(cams)
     last_t, last_ref = 0.0, None

@@ -374,9 +374,20 @@ def body_frame(W, vis, min_hip_vis=0.5):
 
 class Perception:
     def __init__(self, pose_model, hand_model, num_hands=2, min_conf=0.5, depth_cfg=None,
-                 orientation_cfg=None):
+                 orientation_cfg=None, pose_enabled=True, pose_interval=1, pose_hold_frames=0,
+                 force_hand_side=None):
+        """pose_enabled=False: chỉ chạy Hand (camera phụ trong fusion) -> nhẹ gần một nửa.
+        pose_interval=N: Pose chạy 1/N khung, các khung khác dùng lại kết quả Pose gần nhất (Hand vẫn mỗi khung).
+        pose_hold_frames: Pose hụt tối đa chừng này lần chạy thì vẫn giữ kết quả cũ (không mất tay vì Pose chớp).
+        force_hand_side: chỉ điều khiển 1 tay -> bàn tay duy nhất thấy được luôn là tay này (không bị bỏ vì cổ tay
+        Pose lệch hay nhãn handedness sai). Ý tưởng từ bản Openarm_Teleop của nhóm."""
         from pathlib import Path
-        missing = [str(m) for m in (pose_model, hand_model) if not Path(m).is_file()]
+        self.pose_enabled = bool(pose_enabled)
+        self.pose_interval, self.pose_hold = max(1, int(pose_interval)), int(pose_hold_frames)
+        self.force_hand_side = force_hand_side
+        self._pose_count, self._pose_misses, self._last_pose = 0, 0, None
+        models = (pose_model, hand_model) if self.pose_enabled else (hand_model,)
+        missing = [str(m) for m in models if not Path(m).is_file()]
         if missing:
             raise SystemExit("Chưa có model MediaPipe: " + ", ".join(missing) +
                              "\nChạy: bash scripts/download_models.sh")
@@ -389,7 +400,7 @@ class Perception:
         self.pose = vision.PoseLandmarker.create_from_options(vision.PoseLandmarkerOptions(
             base_options=mpt.BaseOptions(model_asset_path=str(pose_model)), running_mode=RM,
             num_poses=1, min_pose_detection_confidence=min_conf,
-            min_pose_presence_confidence=min_conf, min_tracking_confidence=min_conf))
+            min_pose_presence_confidence=min_conf, min_tracking_confidence=min_conf)) if self.pose_enabled else None
         self.hands = vision.HandLandmarker.create_from_options(vision.HandLandmarkerOptions(
             base_options=mpt.BaseOptions(model_asset_path=str(hand_model)), running_mode=RM,
             num_hands=num_hands, min_hand_detection_confidence=min_conf,
@@ -406,8 +417,52 @@ class Perception:
         self._body_R = None
 
     def close(self):
-        self.pose.close()
+        if self.pose is not None:
+            self.pose.close()
         self.hands.close()
+
+    def _hand_only(self, hres, t):
+        """Camera chỉ chạy Hand: mỗi bàn tay gán cho force_hand_side (nếu có đúng 1 bàn tay) - ghép thêm ở fusion."""
+        arms = {"right": ArmObs(), "left": ArmObs()}
+        h2s = [np.array([[p.x, p.y] for p in hl]) for hl in (hres.hand_landmarks or [])]
+        side = self.force_hand_side
+        labels = [side] if (side is not None and len(h2s) == 1) else [None] * len(h2s)
+        if side is not None and len(h2s) == 1:
+            ob = arms[side]
+            ob.conf["hand"] = 0.9
+            if hres.hand_world_landmarks:
+                # Hướng tay từ điểm world MediaPipe (trục cùng hướng camera này): nguồn phụ cho fusion hướng tay
+                hw = np.array([[q.x, q.y, q.z] for q in hres.hand_world_landmarks[0]])
+                ob.hand_R_cam, _ = palm_frame_from_depth(hw, side=side)
+                ob.hand_open_fingers = open_finger_count(hw)
+                hand_len = np.linalg.norm(hw[H_MIDDLE_MCP] - hw[H_WRIST])
+                ob.grip = float(np.linalg.norm(hw[H_THUMB_TIP] - hw[H_INDEX_TIP]) / max(hand_len, 1e-6))
+        return Frame(arms, None, list(zip(h2s, labels)), None, t)
+
+    def _run_pose(self, img, ts):
+        """Pose theo lịch pose_interval + giữ kết quả cũ khi hụt ngắn. -> (pose_2d, W) hoặc None."""
+        self._pose_count += 1
+        self._pose_held = False
+        if self._last_pose is not None and self._pose_count % self.pose_interval != 0:
+            return self._last_pose
+        pres = self.pose.detect_for_video(img, ts)
+        if pres.pose_landmarks:
+            P = pres.pose_landmarks[0]
+            pose_2d = np.array([[p.x, p.y, p.visibility or 0.0] for p in P])
+            W = np.array([[p.x, p.y, p.z] for p in pres.pose_world_landmarks[0]])
+            self._last_pose, self._pose_misses = (pose_2d, W), 0
+            return self._last_pose
+        self._pose_misses += 1
+        if self._last_pose is not None and self._pose_misses <= self.pose_hold:
+            # Pose hụt: giữ vị trí cũ để vẫn gán được bàn tay, nhưng hạ độ thấy (x0.5) -> J1-J4 đứng yên thay vì
+            # coi điểm cũ là mới (không che dead-man khi người đã ra khỏi khung).
+            pose_2d, W = self._last_pose
+            held = pose_2d.copy()
+            held[:, 2] *= 0.5
+            self._pose_held = True
+            return held, W
+        self._last_pose = None
+        return None
 
     def _hold_orientation(self, side):
         self._orientation_tracking[side] = False
@@ -452,20 +507,20 @@ class Perception:
         self._last_ts = ts
         rgb = np.ascontiguousarray(bgr[:, :, ::-1])
         img = self.mp.Image(image_format=self.mp.ImageFormat.SRGB, data=rgb)
-        pres = self.pose.detect_for_video(img, ts)
         hres = self.hands.detect_for_video(img, ts)
+        if not self.pose_enabled:
+            return self._hand_only(hres, t)
+        pose = self._run_pose(img, ts)
         h, w = bgr.shape[:2]
 
         arms = {"right": ArmObs(), "left": ArmObs()}
-        if not pres.pose_landmarks:
+        if pose is None:
             self._body_R = None                     # người ra khỏi khung: lần sau nhận khung thân mới
             for side in arms:
                 self._stabilize_orientation(side, None, "NONE")
             return Frame(arms, None, [], None, t)
-        P = pres.pose_landmarks[0]
-        pose_2d = np.array([[p.x, p.y, p.visibility or 0.0] for p in P])
+        pose_2d, W = pose[0].copy(), pose[1].copy()
         vis = pose_2d[:, 2]
-        W = np.array([[p.x, p.y, p.z] for p in pres.pose_world_landmarks[0]])
         R_body, origin = body_frame(W, vis)
 
         # D455: lấy 3D metric tại landmark RGB. Chỉ dùng cho một tay khi đủ vai/khuỷu/cổ tay;
@@ -500,6 +555,21 @@ class Perception:
         h2s = [np.array([[p.x, p.y] for p in hl]) for hl in (hres.hand_landmarks or [])]
         wrists = {side: pose_2d[ARM_IDX[side][2], :2] * [w, h] for side in ("right", "left")}
         labels = assign_hands_to_wrists([h2[H_WRIST] * [w, h] for h2 in h2s], wrists, 0.35 * max(sh_px, 1.0))
+        fs = self.force_hand_side
+        if fs is not None and fs not in labels:
+            # Chỉ điều khiển 1 tay: bàn tay chưa gán nào GẦN cổ tay đó hơn cổ tay kia và trong 0,6 vai thì nhận
+            # (cổ tay Pose lệch không làm mất tay), nhưng không bao giờ nhận bàn tay đang ở cổ tay bên kia.
+            other = "left" if fs == "right" else "right"
+            best = None
+            for i, h2 in enumerate(h2s):
+                if labels[i] is not None:
+                    continue
+                r = h2[H_WRIST] * [w, h]
+                d_fs, d_ot = np.linalg.norm(r - wrists[fs]), np.linalg.norm(r - wrists[other])
+                if d_fs < d_ot and d_fs < 0.6 * max(sh_px, 1.0) and (best is None or d_fs < best[0]):
+                    best = (d_fs, i)
+            if best is not None:
+                labels[best[1]] = fs
         hands_2d = list(zip(h2s, labels))
         hand_of = {side: i for i, side in enumerate(labels) if side is not None}
 
@@ -535,8 +605,10 @@ class Perception:
                 hw = np.array([[p.x, p.y, p.z] for p in hres.hand_world_landmarks[hi]])
                 hand_len = np.linalg.norm(hw[H_MIDDLE_MCP] - hw[H_WRIST])
                 ob.grip = float(np.linalg.norm(hw[H_THUMB_TIP] - hw[H_INDEX_TIP]) / max(hand_len, 1e-6))
-                score = hres.handedness[hi][0].score if hres.handedness else 1.0
-                ob.conf["hand"] = float(min(score, vis[i_w]))
+                # Không dùng điểm handedness: nó tụt khi mu/cạnh bàn tay quay về camera dù landmark vẫn tốt,
+                # làm J5-J7 đứng hình. Độ tin cậy bàn tay = độ thấy cổ tay (tối thiểu 0,7 khi đã thấy bàn tay).
+                v_w = vis[i_w] * (2.0 if getattr(self, "_pose_held", False) else 1.0)   # bỏ phần hạ do Pose hụt
+                ob.conf["hand"] = float(max(v_w, 0.7)) if v_w >= 0.5 else float(v_w)
                 if depth_m is not None and depth_intrinsics is not None:
                     hold_frames = int(self.depth_cfg.get("hand_model_hold_frames", 6))
                     previous_model = (self._hand_depth_model[side]

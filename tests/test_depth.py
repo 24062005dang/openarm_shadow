@@ -147,6 +147,8 @@ def _fake_perception():
     p._orientation_good = {"right": 0, "left": 0}
     p._orientation_bad = {"right": 0, "left": 0}
     p._body_R = None
+    p.pose_enabled, p.pose_interval, p.pose_hold, p.force_hand_side = True, 1, 0, None
+    p._pose_count, p._pose_misses, p._last_pose = 0, 0, None
     return p
 
 
@@ -187,3 +189,85 @@ def test_webcam_without_depth_still_gives_hand_orientation():
     assert np.allclose(ob.H.T @ ob.H, np.eye(3), atol=1e-6)
     assert ob.hand_open_fingers == 4
     assert ob.hand_R_cam[2, 2] < -0.9            # lòng bàn tay nhìn camera -> pháp tuyến hướng về camera (-z)
+
+
+def _scene():
+    """Người + bàn tay phải giả (giống test_webcam_without_depth...), trả (pres, hres)."""
+    import types
+    L = lambda x, y, z=0.0, v=0.99: types.SimpleNamespace(x=x, y=y, z=z, visibility=v)
+    pose2d = [L(0.5, 0.5) for _ in range(33)]
+    world = [L(0, 0, 0) for _ in range(33)]
+    for i, (x, y) in {11: (0.6, 0.3), 12: (0.4, 0.3), 13: (0.62, 0.45), 14: (0.38, 0.45),
+                      15: (0.63, 0.6), 16: (0.37, 0.6), 23: (0.57, 0.7), 24: (0.43, 0.7)}.items():
+        pose2d[i] = L(x, y)
+    for i, (x, y) in {11: (0.18, -0.45), 12: (-0.18, -0.45), 13: (0.2, -0.17), 14: (-0.2, -0.17),
+                      15: (0.21, 0.08), 16: (-0.21, 0.08), 23: (0.1, 0.0), 24: (-0.1, 0.0)}.items():
+        world[i] = L(x, y, 0.0)
+    hw = np.zeros((21, 3))
+    for k, (dx, dy) in {0: (0, 0), 5: (-0.035, 0.09), 9: (-0.01, 0.095), 13: (0.012, 0.09),
+                        17: (0.032, 0.08)}.items():
+        hw[k] = [dx, dy, 0]
+    for m in (5, 9, 13, 17):
+        for j in range(1, 4):
+            hw[m + j] = hw[m] + [0, 0.025 * j, 0]
+    hw[1:5] = [[-0.04, 0.03, 0], [-0.06, 0.05, 0], [-0.075, 0.065, 0], [-0.085, 0.08, 0]]
+    h2 = [L(0.37 + p[0], 0.6 + p[1]) for p in hw]
+    hres = types.SimpleNamespace(hand_landmarks=[h2], hand_world_landmarks=[[L(*p) for p in hw]],
+                                 handedness=[[types.SimpleNamespace(score=0.3)]])   # handedness thấp
+    pres = types.SimpleNamespace(pose_landmarks=[pose2d], pose_world_landmarks=[world])
+    empty = types.SimpleNamespace(pose_landmarks=[], pose_world_landmarks=[])
+    return pres, empty, hres
+
+
+def test_pose_interval_and_hold_keep_hand_when_pose_blinks():
+    """Pose chạy 1/2 khung và hụt 1 lần: vẫn có tay (không mất nhận diện), Pose không bị gọi mỗi khung.
+    Điểm handedness thấp (mu bàn tay quay về camera) không làm hạ độ tin cậy bàn tay."""
+    import types
+    pres, empty, hres = _scene()
+    p = _fake_perception()
+    p.pose_interval, p.pose_hold = 2, 3
+    calls = []
+    import itertools
+    seq = itertools.chain([pres, empty], itertools.repeat(pres))
+    def detect(img, ts):
+        calls.append(ts)
+        return next(seq)
+    p.pose = types.SimpleNamespace(detect_for_video=detect)
+    p.hands = types.SimpleNamespace(detect_for_video=lambda img, ts: hres)
+    img = np.zeros((480, 640, 3), np.uint8)
+    for k in range(8):
+        fr = p.process(img, t=0.033 * k)
+        assert fr.arms["right"].s is not None, k          # không khung nào mất người/tay
+        assert fr.arms["right"].conf["hand"] >= 0.7
+        if k == 1:                                        # khung Pose hụt: vai/khuỷu giữ nhưng không "tươi" (< 0,6)
+            assert fr.arms["right"].conf["upper"] < 0.6
+        else:
+            assert fr.arms["right"].conf["upper"] > 0.9
+    assert len(calls) == 5                                # 8 khung: khung đầu + 1/2 số khung còn lại
+
+
+def test_hand_only_camera_forces_side():
+    import types
+    _, _, hres = _scene()
+    p = _fake_perception()
+    p.pose_enabled, p.force_hand_side, p.pose = False, "right", None
+    p.hands = types.SimpleNamespace(detect_for_video=lambda img, ts: hres)
+    fr = p.process(np.zeros((480, 640, 3), np.uint8), t=0.0)
+    assert fr.pose_2d is None and len(fr.hands_2d) == 1 and fr.hands_2d[0][1] == "right"
+    assert fr.arms["right"].conf["hand"] >= 0.9
+
+
+def test_forced_side_never_takes_hand_at_other_wrist():
+    import types
+    pres, _, hres = _scene()
+    L = lambda x, y: types.SimpleNamespace(x=x, y=y, z=0.0, visibility=0.99)
+    moved = [L(p.x + 0.26, p.y) for p in hres.hand_landmarks[0]]         # bàn tay nằm ở cổ tay TRÁI
+    hres2 = types.SimpleNamespace(hand_landmarks=[moved], hand_world_landmarks=hres.hand_world_landmarks,
+                                  handedness=hres.handedness)
+    p = _fake_perception()
+    p.force_hand_side = "right"
+    p.pose = types.SimpleNamespace(detect_for_video=lambda img, ts: pres)
+    p.hands = types.SimpleNamespace(detect_for_video=lambda img, ts: hres2)
+    fr = p.process(np.zeros((480, 640, 3), np.uint8), t=0.0)
+    assert [lab for _, lab in fr.hands_2d] == ["left"]
+    assert fr.arms["right"].H is None

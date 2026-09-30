@@ -68,8 +68,11 @@ def fusion_lines(fr, sides):
     names = {"right": (12, 14, 16), "left": (11, 13, 15)}
     for s in sides:
         pts = fi.get("points", {})
+        if fi.get("body") == "front":
+            out.append(f"{s}: vai/khuyu/co tay tu Pose camera 0")
+            pts = None
         parts = []
-        for tag, i in zip(("vai", "khuyu", "co tay"), names[s]):
+        for tag, i in zip(("vai", "khuyu", "co tay"), names[s] if pts is not None else ()):
             p = pts.get(i)
             if p is None:
                 parts.append(f"{tag} -")
@@ -77,7 +80,8 @@ def fusion_lines(fr, sides):
             err = p.get("err_px", float("nan"))
             parts.append(f"{tag} {p['views']}cam" + (f" {err:.0f}px" if np.isfinite(err) else "") +
                          (" D" if p.get("depth") else "") + (" !" if p.get("conflict") else ""))
-        out.append(f"{s}: " + " | ".join(parts))
+        if parts:
+            out.append(f"{s}: " + " | ".join(parts))
         h = fi.get(f"hand_{s}")
         if h:
             extra = ""
@@ -89,6 +93,8 @@ def fusion_lines(fr, sides):
                 extra += f", bo {h['rejected']} cam (xa co tay)"
             if h.get("bones_dropped"):
                 extra += f", bo {h['bones_dropped']} diem (dot bat thuong)"
+            if h.get("sources"):
+                extra += " | nguon: " + "+".join(h["sources"])
             out.append(f"  ban tay {h['views']}cam {h['points']}/21 diem, nhin ro {h['quality']:.2f}, "
                        f"{h['mode']}{extra}")
     return out

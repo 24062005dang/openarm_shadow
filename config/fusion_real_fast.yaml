@@ -1,0 +1,27 @@
+# Robot thật + fusion: cổ tay bám nhanh hơn nhưng VẪN GIỮ các lớp an toàn (khác bản Openarm_Teleop tắt hẳn giới
+# hạn tốc độ / tăng tốc mềm / chặn bước nhảy). Đặt SAU config cổ tay thật và config fusion:
+#   python scripts/shadow.py --source multi --robot openarm --arms right \
+#       --config config/wrist_real_30.yaml --config config/fusion_2cam.yaml --config config/fusion_real_fast.yaml
+#
+# Chỉ dùng khi: dry-run đã xác nhận chiều J5-J7, đã chạy ổn wrist_real_30.yaml (30°/s), có người giữ E-stop,
+# không ai trong tầm với. Tăng dần, mỗi bước chạy thử vài phút: cổ tay 60 -> 90 -> 120°/s; J1-J4 30 -> 45 -> 60°/s.
+# (Xoay cổ tay người nhanh tới 200-350°/s: robot sẽ luôn chậm hơn người một chút khi xoay rất nhanh - chấp nhận.)
+
+safety:
+  #               J1  J2  J3  J4  J5  J6  J7
+  max_vel_deg_s: [30, 30, 40, 40, 90, 90, 90]
+  engage_blend_s: 1.0        # tăng tốc mềm 1 s khi engage (bản kia: 0 = lao tới mục tiêu trong 1 nhịp)
+
+filter:
+  #           J1    J2    J3    J4    J5   J6   J7   kẹp
+  min_cutoff: [0.8, 0.8, 0.7, 0.8, 1.5, 1.5, 1.5, 1.5]
+  beta:       [0.05, 0.05, 0.05, 0.05, 1.0, 1.0, 1.0, 0.3]
+  deadband_deg: [1.0, 1.0, 1.5, 1.0, 1.5, 1.5, 1.5, 0]
+  # Bước nhảy lớn hơn jump_deg trong 1 khung bị giữ jump_hold_s rồi mới nhận (chỉ làm chậm, không chặn hẳn).
+  # Chống lật hướng tay là việc của OrientationFusion (đổi > 100° cần 3 khung, lúc chờ cổ tay đứng yên);
+  # bộ lọc chỉ là lớp phụ. Kẹp đơn vị 0..1: 35 = không chặn.
+  jump_deg: [35, 35, 35, 35, 90, 90, 90, 35]
+  jump_hold_s: 0.15
+
+fusion:
+  orientation_fusion: {alpha: 0.7, fast_alpha: 0.95, fast_angle_deg: 45}
