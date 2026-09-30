@@ -21,18 +21,18 @@ fusion:
   calib_file: config/cameras_calib.yaml
 
 camera:
-  # Webcam laptop: 1280x720 định dạng MJPG để vẫn 30 fps (YUYV mặc định chỉ ~10 fps ở 720p). Nhiều điểm ảnh hơn
-  # trên bàn tay -> MediaPipe Hand chính xác hơn. Phải giống lúc hiệu chuẩn (chương trình kiểm tra):
-  # đổi độ phân giải thì chạy lại calibrate_cameras.py. Kiểm tra độ nét/fps: python scripts/webcam_check.py
-  width: 1280
-  height: 720
-  fourcc: MJPG
+  # Webcam laptop Latitude 5490 (Integrated_Webcam_HD) chỉ có YUYV, tối đa 640x480 @ 30 fps (đo bằng
+  # v4l2-ctl --list-formats-ext): không lên 720p được. Phải giống lúc hiệu chuẩn (chương trình kiểm tra).
+  # Đổi sang webcam khác thì sửa width/height/fourcc và chạy lại calibrate_cameras.py.
+  width: 640
+  height: 480
+  fourcc: null
   fps: 30
-  v4l2:                           # cần: sudo apt install v4l-utils. Tên control: webcam_check.py in ra
+  v4l2:                           # cần: sudo apt install v4l-utils. Danh sách control: scripts/webcam_check.py
     power_line_frequency: 1       # 50 Hz (điện VN): hết sọc nhấp nháy dưới đèn huỳnh quang/LED
-    # exposure_dynamic_framerate: 0  # không tự hạ fps khi tối (ảnh tối hơn nhưng ít nhoè chuyển động)
-    # auto_exposure: 1               # 1 = chỉnh tay; kèm exposure_time_absolute: 150 (đơn vị 0,1 ms) nếu tay nhoè
-    # sharpness: 4                   # tăng nét của chính webcam (thang đo xem webcam_check.py)
+    # sharpness: 3                # 0-6, mặc định 2. Làm nét trong webcam: cao quá thì viền trắng + nhiễu
+    # auto_exposure: 1            # 1 = chỉnh tay (3 = tự động); kèm exposure_time_absolute (625-5000,
+    # exposure_time_absolute: 625 #   mặc định 2500): nhỏ hơn = ít nhoè khi tay cử động nhưng tối hơn
   realsense:
     width: 640
     height: 480
