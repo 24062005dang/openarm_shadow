@@ -314,7 +314,8 @@ class HandOrientationTracker:
 class MultiSample:
     views: list                 # CameraSample theo thứ tự fusion.cameras
     t: float                    # thời điểm (s, time.monotonic) của khung camera tham chiếu
-    skew_s: float = 0.0         # lệch thời gian lớn nhất giữa các khung được ghép
+    skew_s: float = 0.0         # lệch thời gian lớn nhất giữa các khung được ghép (không tính camera stale)
+    stale: list = None          # stale[i] = True: camera i không có khung đủ mới (treo, mất kết nối) -> bỏ qua
 
 
 class MultiCameraSource:
@@ -327,6 +328,8 @@ class MultiCameraSource:
         self.names = [c["name"] for c in fc["cameras"]]
         self.kinds = []
         self.tol = float(fc.get("sync_tol_s", 0.025))
+        # Khung của camera phụ cũ hơn mức này so với camera tham chiếu = camera đó đang treo: không dùng khung cũ.
+        self.stale_s = float(fc.get("stale_s", max(4 * self.tol, 0.1)))
         n_rs = sum(str(c.get("source", "realsense")).lower() in REALSENSE_NAMES for c in fc["cameras"])
         self.srcs = []
         try:
@@ -390,7 +393,7 @@ class MultiCameraSource:
                 self.cond.wait(left)
             t_ref, ref = self.buf[0][-1]
             self.last_ref_t = t_ref
-            views, skew = [ref], 0.0
+            views, skew, stale = [ref], 0.0, [False]
             for i in range(1, len(self.buf)):
                 wait_until = time.monotonic() + self.tol
                 while True:
@@ -404,8 +407,11 @@ class MultiCameraSource:
                 if best is None:
                     return False, None
                 views.append(best[1])
-                skew = max(skew, abs(best[0] - t_ref))
-        return True, MultiSample(views, t_ref, skew)
+                lag = abs(best[0] - t_ref)
+                stale.append(lag > self.stale_s)
+                if lag <= self.stale_s:
+                    skew = max(skew, lag)
+        return True, MultiSample(views, t_ref, skew, stale)
 
     def describe_stall(self, timeout):
         """Câu báo lỗi khi camera tham chiếu không gửi khung mới: số khung/lỗi của từng camera."""
@@ -418,6 +424,8 @@ class MultiCameraSource:
 
     def close(self):
         self.running = False
+        for th in getattr(self, "threads", []):     # chờ luồng đọc thoát trước khi giải phóng camera
+            th.join(timeout=1.0)
         for s in self.srcs:
             try:
                 s.close()
@@ -546,6 +554,7 @@ class MultiViewPerception:
                 W[i], vis[i] = X, c
         arms = {"right": ArmObs(), "left": ArmObs()}
         if not (np.all(np.isfinite(W[[L_SH, R_SH]])) and min(vis[L_SH], vis[R_SH]) > 0):
+            self._body_R = None                          # mất người: lần sau nhận khung thân mới
             for s in self.trackers:
                 self.trackers[s].update(None, 0.0)
             return Frame(arms, None, [], None, t, fusion=info), W
@@ -663,16 +672,22 @@ class MultiViewPerception:
         for cam, s in zip(self.cams, msample.views):
             if cam.rs_intr is None and s.intrinsics is not None:
                 cam.set_realsense_intrinsics(s.intrinsics)
-        jobs = [(p, s.bgr) for p, s in zip(self.per_view, msample.views)]
+        stale = msample.stale or [False] * len(msample.views)
+        jobs = [(p, s.bgr) for p, s, st in zip(self.per_view, msample.views, stale) if not st]
         if self.pool is not None:
-            frames = list(self.pool.map(lambda a: a[0].process(a[1], msample.t), jobs))
+            done = list(self.pool.map(lambda a: a[0].process(a[1], msample.t), jobs))
         else:
-            frames = [p.process(b, msample.t) for p, b in jobs]
+            done = [p.process(b, msample.t) for p, b in jobs]
+        it = iter(done)
+        # Camera stale: không chạy MediaPipe, coi như không thấy gì (không trộn khung cũ vào triangulation)
+        frames = [Frame({"right": ArmObs(), "left": ArmObs()}, None, [], None, msample.t) if st else next(it)
+                  for st in stale]
         self.view_frames = frames
         views_obs = [self._view_obs(v, s, f) for v, (s, f) in enumerate(zip(msample.views, frames))]
         fr, W = self.fuse(views_obs, msample.t)
         fr.pose_2d, fr.hands_2d = frames[0].pose_2d, frames[0].hands_2d
         fr.fusion["skew_ms"] = 1000.0 * msample.skew_s
+        fr.fusion["stale"] = [self.cams[v].name for v, st in enumerate(stale) if st]
         self.last_world = W
         return fr
 

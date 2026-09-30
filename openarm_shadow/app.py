@@ -50,10 +50,21 @@ class Controller(threading.Thread):
             self.running = False
 
 
+def uncalibrated_free_wrists(pipe, gate):
+    """Các tay robot có J5-J7 được phép cử động (giới hạn mềm khác [0, 0]) mà bàn tay chưa hiệu chuẩn."""
+    out = []
+    for s in pipe.robot_sides:
+        free = bool(np.any(gate.hi[s][4:7] - gate.lo[s][4:7] > 1e-6))
+        if free and not pipe.hand_calibrated[s]:
+            out.append(s)
+    return out
+
+
 def fusion_lines(fr, sides):
     """Dòng chẩn đoán fusion: số camera thấy vai/khuỷu/cổ tay, sai số chiếu lại, xung đột depth, bàn tay."""
     fi = fr.fusion or {}
-    out = [f"fusion {fi.get('views', 0)} cam | lech khung {fi.get('skew_ms', 0.0):.0f} ms"]
+    out = [f"fusion {fi.get('views', 0)} cam | lech khung {fi.get('skew_ms', 0.0):.0f} ms"
+           + (f" | MAT KHUNG: {', '.join(fi['stale'])}" if fi.get("stale") else "")]
     names = {"right": (12, 14, 16), "left": (11, 13, 15)}
     for s in sides:
         pts = fi.get("points", {})
@@ -130,48 +141,50 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
         cap = open_source(source, cfg)
         perc = Perception(cfg["models"]["pose"], cfg["models"]["hand"], min_conf=cfg["models"]["min_conf"],
                           depth_cfg=cfg["camera"].get("realsense"), orientation_cfg=cfg.get("orientation"))
-    pipe = ShadowPipeline(cfg)
-    real = None
-    if robot_kind == "openarm" and dry_run:
-        real = make_robot("openarm", cfg, pipe.robot_sides)
-        q_meas = real.connect()
-        from .robot.sim import SimRobot
-        robot = SimRobot(pipe.robot_sides, q0=q_meas)
-        robot_kind = "sim"
-    else:
-        robot = make_robot(robot_kind, cfg, pipe.robot_sides)
-        q_meas = robot.connect()
-    print("Tư thế đo được (độ, URDF):")
-    for s, q in q_meas.items():
-        print(f"  {s:5s}", np.round(np.rad2deg(q[:7]), 1), " kẹp", round(float(q[7]), 2))
-    gate = SafetyGate(pipe.kins, cfg["safety"])
-    gate.reset(q_meas)
-    pipe.seed(q_meas)
-
-    if robot_kind == "openarm":
-        print("\nROBOT THẬT. Kiểm tra: E-stop trong tay, không ai trong tầm với, tay đang thả xuôi.")
-        if input("Gõ 'yes' để bật motor: ").strip().lower() != "yes":
-            robot.close()
-            raise SystemExit("Huỷ.")
-        robot.enable()
-
-    ctl = Controller(robot, gate, cfg["robot"]["control_hz"])
-    ctl.start()
-    rest = np.deg2rad(np.asarray(cfg["robot"]["rest_pose_deg"], float))
-    log = {"t": [], **{f"target_{s}": [] for s in pipe.robot_sides}, **{f"cmd_{s}": [] for s in pipe.robot_sides}}
-    fps_t, fps = time.monotonic(), 0.0
-    auto_engage_s = float(cfg.get("calibration", {}).get("hand_auto", {}).get("auto_engage_sim_s", 3.0))
-    ready_since = None
-    auto_engage_used = False
-    auto_countdown = None
-    msg = ("GIU READY 3s: tu dong sync | SPACE: dung/chay thu cong | c: calib lai | q: thoat"
-           if robot_kind == "sim" else
-           "SPACE: engage | c: hieu chuan tay | p: ve nghi | q: thoat")
-    if real is not None:
-        msg = "DRY RUN: motor TAT. Xanh la = robot that. " + msg
-    if show:
-        cv2.namedWindow("openarm_shadow", cv2.WINDOW_NORMAL)   # kéo giãn được cửa sổ
+    robot = real = ctl = gate = None
+    log = {"t": []}
+    # Mọi thứ sau khi mở camera nằm trong try: lỗi ở bất kỳ bước nào (kể cả ngay sau khi bật motor) vẫn
+    # về tư thế nghỉ và tắt motor, đóng camera.
     try:
+        pipe = ShadowPipeline(cfg)
+        if robot_kind == "openarm" and dry_run:
+            real = make_robot("openarm", cfg, pipe.robot_sides)
+            q_meas = real.connect()
+            from .robot.sim import SimRobot
+            robot = SimRobot(pipe.robot_sides, q0=q_meas)
+            robot_kind = "sim"
+        else:
+            robot = make_robot(robot_kind, cfg, pipe.robot_sides)
+            q_meas = robot.connect()
+        print("Tư thế đo được (độ, URDF):")
+        for s, q in q_meas.items():
+            print(f"  {s:5s}", np.round(np.rad2deg(q[:7]), 1), " kẹp", round(float(q[7]), 2))
+        gate = SafetyGate(pipe.kins, cfg["safety"])
+        gate.reset(q_meas)
+        pipe.seed(q_meas)
+
+        if robot_kind == "openarm":
+            print("\nROBOT THẬT. Kiểm tra: E-stop trong tay, không ai trong tầm với, tay đang thả xuôi.")
+            if input("Gõ 'yes' để bật motor: ").strip().lower() != "yes":
+                raise SystemExit("Huỷ.")
+            robot.enable()
+
+        ctl = Controller(robot, gate, cfg["robot"]["control_hz"])
+        ctl.start()
+        rest = np.deg2rad(np.asarray(cfg["robot"]["rest_pose_deg"], float))
+        log = {"t": [], **{f"target_{s}": [] for s in pipe.robot_sides}, **{f"cmd_{s}": [] for s in pipe.robot_sides}}
+        fps_t, fps = time.monotonic(), 0.0
+        auto_engage_s = float(cfg.get("calibration", {}).get("hand_auto", {}).get("auto_engage_sim_s", 3.0))
+        ready_since = None
+        auto_engage_used = False
+        auto_countdown = None
+        msg = ("GIU READY 3s: tu dong sync | SPACE: dung/chay thu cong | c: calib lai | q: thoat"
+               if robot_kind == "sim" else
+               "SPACE: engage | c: hieu chuan tay | p: ve nghi | q: thoat")
+        if real is not None:
+            msg = "DRY RUN: motor TAT. Xanh la = robot that. " + msg
+        if show:
+            cv2.namedWindow("openarm_shadow", cv2.WINDOW_NORMAL)   # kéo giãn được cửa sổ
         while ctl.running:
             ok, sample = cap.read()
             if not ok:
@@ -209,7 +222,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                     auto_countdown = None
             targets = pipe.step(fr)
             with ctl.lock:
-                gate.set_target(targets, time.monotonic())
+                gate.set_target(targets, time.monotonic(), fresh=pipe.fresh)
                 cmd = {s: v.copy() for s, v in gate.cmd.items()}
                 status = gate.status
             if record:
@@ -289,12 +302,22 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                     with ctl.lock:
                         if gate.engaged:
                             gate.disengage()
+                        elif blocked := uncalibrated_free_wrists(pipe, gate):
+                            # Cổ tay J5-J7 được phép cử động mà chưa hiệu chuẩn tay: hướng trung tính mặc định có
+                            # thể lệch tới 180° -> cổ tay chạy thẳng tới giới hạn khi engage. Không cho engage.
+                            print("CHƯA ENGAGE: chưa hiệu chuẩn bàn tay cho", blocked,
+                                  "- thả tay xuôi, xoè bàn tay, lòng bàn tay nhìn camera, đứng yên tới khi READY.")
                         else:
                             q_now = robot.read()
                             pipe.seed(q_now)
                             gate.engage(time.monotonic())
                 elif k == ord("c"):
-                    print("Hiệu chuẩn tay trung tính cho:", pipe.calibrate_hand_neutral(fr) or "không thấy bàn tay")
+                    if gate.engaged:
+                        # Đổi offset cổ tay lúc đang bám làm lệnh J5-J7 nhảy: chỉ cho khi đã nhả (SPACE).
+                        print("Nhả robot (SPACE) trước khi hiệu chuẩn lại bàn tay.")
+                    else:
+                        print("Hiệu chuẩn tay trung tính cho:",
+                              pipe.calibrate_hand_neutral(fr) or "không thấy bàn tay")
                 elif k == ord("p"):
                     with ctl.lock:
                         gate.disengage()
@@ -307,16 +330,22 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                     print("Thoát (phím q/Esc).")
                     break
     finally:
-        ctl.running = False
-        ctl.join(timeout=1.0)
-        if ctl.error:
-            print("LỖI vòng điều khiển:", ctl.error)
+        ctl_error = None
+        if ctl is not None:
+            ctl.running = False
+            ctl.join(timeout=1.0)
+            ctl_error = ctl.error
+            if ctl_error:
+                print("LỖI vòng điều khiển:", ctl_error)
         try:
-            if robot_kind == "openarm" and ctl.error is None:
+            if (robot_kind == "openarm" and robot is not None and getattr(robot, "enabled", False)
+                    and ctl_error is None):
                 print("Về tư thế nghỉ...")
-                park(robot, gate, rest, cfg["robot"]["park_vel_deg_s"])
+                park(robot, gate, np.deg2rad(np.asarray(cfg["robot"]["rest_pose_deg"], float)),
+                     cfg["robot"]["park_vel_deg_s"])
         finally:
-            robot.close()
+            if robot is not None:
+                robot.close()
             if real is not None:
                 real.close()
             perc.close()

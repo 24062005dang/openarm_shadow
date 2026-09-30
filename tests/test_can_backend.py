@@ -197,3 +197,19 @@ def test_software_offset_shifts_motor_limits(monkeypatch):
     r.enable()
     r.send({"right": np.zeros(8)})
     assert hw.a.ms[3].q == pytest.approx(np.deg2rad(-7.7), abs=np.deg2rad(0.5))
+
+
+def test_close_disables_motors_even_if_damping_step_fails(robot):
+    """CAN lỗi giữa bước giảm chấn (vd bus-off): motor vẫn phải được tắt."""
+    r, hw = robot
+    r.connect()
+    r.enable()
+    assert hw.enabled
+
+    def boom(ps):
+        raise RuntimeError("bus-off")
+
+    hw.a.mit_control_all = boom
+    with pytest.raises(RuntimeError):
+        r.close()
+    assert not hw.enabled and not r.enabled

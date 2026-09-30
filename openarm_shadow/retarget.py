@@ -19,16 +19,24 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .geometry import angle_between, rot, sp1, sp2, unit, wrap
+from .geometry import angle_between, sp1, sp2, unit, wrap
 from .kinematics import ArmKinematics
 
-# Hướng bàn tay "trung tính" mặc định: tay thả xuôi, lòng bàn tay hướng vào đùi.
-#   cột x = hướng ngón tay (cổ tay → gốc ngón giữa) = xuống
-#   cột y = hướng từ gốc ngón út sang gốc ngón trỏ  = ra trước
-#   cột z = x × y
-_X = np.array([0.0, 0.0, -1.0])
-_Y = np.array([1.0, 0.0, 0.0])
-DEFAULT_HAND_NEUTRAL = np.column_stack([_X, _Y, np.cross(_X, _Y)])
+# Hướng bàn tay "trung tính" mặc định: tay thả xuôi, ngón cái ra trước, lòng bàn tay hướng vào đùi, theo đúng
+# quy ước của palm_frame_from_depth (x hướng ngón, z pháp tuyến ra khỏi lòng bàn tay, y = z × x):
+#   tay trái : x xuống, y ra trước (út -> trỏ), z sang phải (vào đùi)
+#   tay phải : x xuống, y ra sau,             z sang trái (vào đùi)
+# Trước đây dùng chung khung tay trái cho cả hai tay -> tay phải lệch 180° quanh trục ngón (J5 chạy tới giới
+# hạn nếu engage khi chưa hiệu chuẩn). Vẫn nên hiệu chuẩn tay trước khi engage.
+_DOWN, _FWD, _LEFT = np.array([0.0, 0.0, -1.0]), np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0])
+_HAND_NEUTRAL = {"left": np.column_stack([_DOWN, _FWD, -_LEFT]),
+                 "right": np.column_stack([_DOWN, -_FWD, _LEFT])}
+DEFAULT_HAND_NEUTRAL = _HAND_NEUTRAL["left"]          # giữ tên cũ cho code ngoài
+
+
+def default_hand_neutral(human_side):
+    """Khung bàn tay trung tính (tay thả xuôi) của bàn tay NGƯỜI bên human_side, trong khung thân."""
+    return _HAND_NEUTRAL[human_side].copy()
 
 
 @dataclass

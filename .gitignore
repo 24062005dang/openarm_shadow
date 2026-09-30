@@ -5,3 +5,9 @@ models/
 *.mp4
 .pytest_cache/
 external/librealsense/
+# Sinh ra khi chạy (riêng từng máy / từng lần chạy)
+config/cameras_calib.yaml
+config/local*.yaml
+charuco_a4.png
+charuco_a4.pdf
+webcam_check_*.png

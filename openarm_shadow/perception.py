@@ -363,14 +363,6 @@ def rotation_distance(R0, R1):
     return float(np.arccos(np.clip((np.trace(d) - 1.0) * 0.5, -1.0, 1.0)))
 
 
-def hand_frame(hw):
-    """hw: (21, 3) điểm world của bàn tay. Trả về 3x3 [x ngón, y út→trỏ, z]."""
-    x = unit(hw[H_MIDDLE_MCP] - hw[H_WRIST])
-    across = hw[H_INDEX_MCP] - hw[H_PINKY_MCP]
-    y = unit(across - (across @ x) * x)
-    return np.column_stack([x, y, np.cross(x, y)])
-
-
 def body_frame(W, vis, min_hip_vis=0.5):
     """Khung thân từ điểm world của Pose. Thiếu hông (ngồi, bị bàn che) thì dùng 'lên' của camera."""
     if min(vis[L_HIP], vis[R_HIP]) >= min_hip_vis:
@@ -466,6 +458,7 @@ class Perception:
 
         arms = {"right": ArmObs(), "left": ArmObs()}
         if not pres.pose_landmarks:
+            self._body_R = None                     # người ra khỏi khung: lần sau nhận khung thân mới
             for side in arms:
                 self._stabilize_orientation(side, None, "NONE")
             return Frame(arms, None, [], None, t)
@@ -511,12 +504,16 @@ class Perception:
         hand_of = {side: i for i, side in enumerate(labels) if side is not None}
 
         body_candidate = R_depth if R_depth is not None else R_body
-        if self._body_R is None:
-            self._body_R = body_candidate
+        if self._body_R is None or getattr(self, "_body_reject", 0) >= 10:
+            self._body_R, self._body_reject = body_candidate, 0
         elif np.rad2deg(rotation_distance(self._body_R, body_candidate)) <= float(
                 self.orientation_cfg.get("body_max_jump_deg", 45)):
             self._body_R = slerp_rotation(
                 self._body_R, body_candidate, float(self.orientation_cfg.get("body_smoothing", 0.35)))
+            self._body_reject = 0
+        else:
+            # Nhảy lớn: giữ khung cũ; lặp lại 10 khung liền (người quay thật / lần đầu nhận sai) thì nhận khung mới
+            self._body_reject = getattr(self, "_body_reject", 0) + 1
         active_R = self._body_R
         active_origin = origin_depth if origin_depth is not None else origin
         depth_used, hand_depth = {}, {}

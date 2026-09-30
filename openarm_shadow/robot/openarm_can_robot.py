@@ -270,17 +270,26 @@ class OpenArmCANRobot:
             return
         oa = next(iter(self.arms.values())).oa
         t_end = time.monotonic() + seconds
-        while time.monotonic() < t_end:
+        try:
+            while time.monotonic() < t_end:
+                for a in self.arms.values():
+                    a.arm.get_arm().mit_control_all(
+                        [oa.MITParam(0.0, float(a.kd[i]), float(a.q_motor[i]), 0.0, 0.0) for i in range(7)])
+                    a.arm.recv_all(1000)
+                    a._update()
+                time.sleep(0.01)
+        finally:
+            # Luôn tắt motor, kể cả khi bước giảm chấn lỗi (vd CAN bus-off): lỗi một tay không bỏ qua tay kia.
+            errors = []
             for a in self.arms.values():
-                a.arm.get_arm().mit_control_all(
-                    [oa.MITParam(0.0, float(a.kd[i]), float(a.q_motor[i]), 0.0, 0.0) for i in range(7)])
-                a.arm.recv_all(1000)
-                a._update()
-            time.sleep(0.01)
-        for a in self.arms.values():
-            a.arm.disable_all()
-            a.arm.recv_all(2000)
-        self.enabled = False
+                try:
+                    a.arm.disable_all()
+                    a.arm.recv_all(2000)
+                except Exception as e:      # noqa: BLE001 - ghi lại, vẫn tắt tay còn lại
+                    errors.append(e)
+            self.enabled = False
+            if errors:
+                print("LỖI khi tắt motor (kiểm tra robot, dùng E-stop nếu còn giữ lực):", errors)
 
     def close(self):
         try:

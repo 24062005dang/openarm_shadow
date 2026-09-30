@@ -116,3 +116,24 @@ def test_auto_calibration_waits_for_palm_facing_camera():
         pipe.auto_calibrate_hand_neutral(fr)
     assert not pipe.hand_calibrated["right"]
     assert pipe.calib_hint["right"] == "long ban tay nhin camera"
+
+
+def test_default_hand_neutral_matches_relaxed_hand_each_side():
+    """Chưa hiệu chuẩn: tay thả xuôi, ngón cái ra trước, lòng bàn tay vào đùi -> J5-J7 gần 0 cho CẢ hai tay
+    (trước đây tay phải lệch 180°: J5 chạy tới giới hạn)."""
+    import numpy as np
+    from openarm_shadow.config import load_config
+    from openarm_shadow.perception import palm_frame_from_depth
+    from openarm_shadow.pipeline import ShadowPipeline
+    from test_multiview import hand_points
+
+    cfg = load_config()
+    pipe = ShadowPipeline(cfg)
+    down, fwd = np.array([0, 0, -1.0]), np.array([1.0, 0, 0])
+    for side in ("right", "left"):
+        # khung cục bộ của hand_points: x hướng ngón; y = út -> trỏ (tay phải), trỏ -> út (tay trái)
+        y_local = fwd if side == "right" else -fwd
+        R_local = np.column_stack([down, y_local, np.cross(down, y_local)])
+        H, _ = palm_frame_from_depth(hand_points(side, R_local, np.zeros(3)), side=side)
+        q, _ = pipe.rt[side].solve(down, down, H, np.zeros(7))
+        assert np.all(np.abs(np.degrees(q[4:7])) < 15), (side, np.degrees(q[4:7]))

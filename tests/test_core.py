@@ -262,3 +262,38 @@ def test_gate_not_stuck_near_collision():
         g.step(0.01, t)
     assert np.abs(g.cmd["right"][:7]).max() < np.deg2rad(2)
     assert g.min_arm_distance(g.cmd) >= g.col_margin - 1e-6
+
+
+def test_gate_deadman_when_only_held_targets_arrive():
+    """Người ra khỏi khung: bộ lọc vẫn gửi mục tiêu cũ (fresh=False) mỗi khung -> dead-man vẫn phải chặn,
+    và khi có người lại thì tăng tốc mềm lại từ đầu."""
+    g = make_gate()
+    g.engage(0.0)
+    tgt = {s: np.full(8, 0.5) for s in g.sides}
+    t = 0.0
+    for _ in range(300):                       # 3 s bám bình thường: hết giai đoạn engage
+        t += 0.01
+        g.set_target(tgt, t)
+        g.step(0.01, t)
+    assert g.status == "follow"
+    far = {s: np.full(8, -0.5) for s in g.sides}
+    for _ in range(100):                       # 1 s chỉ có mục tiêu "giữ" (không thấy người)
+        t += 0.01
+        g.set_target(far, t, fresh=False)
+        g.step(0.01, t)
+    assert g.status.startswith("hold (dead-man")
+    before = g.cmd["right"].copy()
+    t += 0.01
+    g.set_target(far, t)                       # có người lại
+    g.step(0.01, t)
+    assert g.status.startswith("engage")       # tăng tốc lại từ đầu
+    assert np.all(np.abs(g.cmd["right"][:7] - before[:7]) <= g.max_vel * 0.01 * 0.051 + 1e-9)
+
+
+def test_grip_filter_uses_grip_units():
+    from openarm_shadow.filters import JointFilter
+    f = JointFilter(2, 1.0, 0.0, [1.0, 0.05], [35, 35], 0.2, 0.5, angular=[True, False])
+    assert f.dead[1] == 0.05 and f.jump[1] == 35
+    f(np.array([0.0, 0.0]), np.ones(2), 0.0)
+    out, held = f(np.array([0.0, 1.0]), np.ones(2), 0.033)   # kẹp mở hết trong 1 khung: không bị coi là nhảy
+    assert not held[1] and out[1] > 0.1

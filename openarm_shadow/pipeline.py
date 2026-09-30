@@ -8,7 +8,7 @@ from .filters import EMA, JointFilter
 from .geometry import angle_between, orthonormalize, unit
 from .kinematics import ArmKinematics
 from .perception import ArmObs, Frame
-from .retarget import ArmRetargeter, mirror_rotation, mirror_vector
+from .retarget import ArmRetargeter, default_hand_neutral, mirror_rotation, mirror_vector
 
 
 class ShadowPipeline:
@@ -20,10 +20,13 @@ class ShadowPipeline:
         self.kins = {s: ArmKinematics(s) for s in self.robot_sides}
         rc = cfg["retarget"]
         self.rt = {s: ArmRetargeter(self.kins[s], rc["elbow_straight_deg"]) for s in self.robot_sides}
+        for s in self.robot_sides:            # hướng trung tính mặc định theo đúng bàn tay người điều khiển tay này
+            Hn = default_hand_neutral(self.human_side_for(s))
+            self.rt[s].set_hand_neutral(Hn if self.mode == "direct" else mirror_rotation(Hn))
         fc = cfg["filter"]
         self.filt = {
             s: JointFilter(8, fc["min_cutoff"], fc["beta"], fc["deadband_deg"], fc["jump_deg"],
-                           fc["jump_hold_s"], fc["min_conf"])
+                           fc["jump_hold_s"], fc["min_conf"], angular=[True] * 7 + [False])
             for s in self.robot_sides
         }
         self.lm_ema = {s: EMA(fc["landmark_ema_alpha"]) for s in self.robot_sides}
@@ -31,6 +34,7 @@ class ShadowPipeline:
         self.grip_pinch, self.grip_open = g["pinch_ratio"], g["open_ratio"]
         self.q_prev = {s: np.zeros(7) for s in self.robot_sides}
         self.last_info = {}
+        self.fresh = False       # khung vừa rồi có ít nhất 1 khớp nhận giá trị mới (không phải giữ) -> dead-man
         cc = cfg.get("calibration", {}).get("hand_auto", {})
         self.auto_calib_enabled = bool(cc.get("enabled", True))
         self.auto_calib_hold_s = float(cc.get("hold_s", 0.6))
@@ -167,7 +171,7 @@ class ShadowPipeline:
             self.q_prev[s] = np.asarray(q_meas[s][:7], float).copy()
 
     def step(self, frame: Frame):
-        targets = {}
+        targets, fresh = {}, False
         for s in self.robot_sides:
             ob = self._obs_for_robot(frame, s)
             fc = self.cfg["filter"]
@@ -198,6 +202,8 @@ class ShadowPipeline:
                 conf[4:7] = 0
             if info.elbow_straight:
                 conf[2] = 0          # J3 không xác định khi tay thẳng -> giữ
-            out, _ = self.filt[s](raw, conf, frame.t)
+            out, held = self.filt[s](raw, conf, frame.t)
+            fresh = fresh or not bool(np.all(held[:7]))
             targets[s] = out
+        self.fresh = fresh
         return targets

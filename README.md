@@ -34,11 +34,14 @@ lọc số đọc rác.
 
 - Đã kiểm tra (trên máy không có camera/robot): động học, retarget (thử ngược 500 tư thế, sai lệch < 1e-10°),
   bộ lọc, SafetyGate, luồng chạy sim với dữ liệu người giả lập, backend CAN với `openarm_can` giả lập.
-  `pytest` 61/61 đạt (gồm test lọc số đọc rác của backend CAN và test fusion 2 camera giả lập).
+  `pytest` 79/79 đạt (gồm test lọc số đọc rác của backend CAN, fusion 2 camera và làm sạch bàn tay giả lập).
 - `scripts/demo_sim.py` chạy trọn luồng pipeline → SafetyGate → robot mô phỏng với người giả lập (đã chạy được).
 - Đã chạy với webcam thật trên laptop của nhóm (mô phỏng, 28/09): nhận diện và bám theo tay.
-- **Chưa chạy trên OpenArm thật**. Làm theo `docs/SAFETY.md` (dry-run trước, rồi `config/first_real.yaml`).
-- Quy ước góc URDF ↔ góc motor đang đặt là đồng nhất. **Phải kiểm tra** (SAFETY.md bước 3).
+- Tay phải đã chạy trên OpenArm thật (30/09) với `config/first_real.yaml` (J1–J4, J5–J7 khoá). Tay trái CHƯA:
+  zero sai, phải hiệu chuẩn lại trước. Vẫn làm theo `docs/SAFETY.md` mỗi buổi (dry-run trước).
+- Quy ước góc URDF ↔ motor: dấu đồng nhất; offset zero đo trên robot nằm trong `urdf_to_motor` của các config
+  chạy thật (J4 tay phải trôi giữa các buổi: **đo lại mỗi buổi**).
+- Fusion 2 camera (webcam + D435i, `--source multi`): chạy được trên máy nhóm; độ chính xác còn phụ thuộc webcam.
 
 ## Cài đặt (Ubuntu 24.04, Python 3.12, không cần GPU)
 
@@ -48,7 +51,7 @@ python3 -m venv --system-site-packages .venv   # system-site để thấy python
 source .venv/bin/activate
 pip install -r requirements.txt
 bash scripts/download_models.sh                # model MediaPipe vào models/
-python -m pytest -q                            # 61 test phải đạt
+python -m pytest -q                            # 79 test phải đạt
 python scripts/check_kinematics.py             # in trục khớp, thử ngược retarget
 ```
 
@@ -61,8 +64,8 @@ RealSense D455 cần thêm: `pip install -e '.[realsense]'` (SDK đã thử vớ
 # 0) Mô phỏng không cần camera, model hay robot: người giả lập làm vài động tác
 python scripts/demo_sim.py                      # q/Esc để thoát; --out demo.mp4 để ghi video
 
-# 1) Mô phỏng với webcam: camera + hình que robot. Luôn chạy bước này trước robot thật.
-python scripts/shadow.py
+# 1) Mô phỏng với camera + hình que robot. Luôn chạy bước này trước robot thật.
+python scripts/shadow.py                        # mặc định: RealSense (camera.index trong config)
 python scripts/shadow.py --mode mirror          # đứng đối diện robot, như soi gương
 python scripts/shadow.py --arms right           # chỉ điều khiển tay phải
 python scripts/shadow.py --source realsense      # D455 duy nhất: RGB MediaPipe + depth metric

@@ -60,9 +60,17 @@ class SafetyGate:
     def disengage(self):
         self.engaged = False
 
-    def set_target(self, targets: dict, now):
-        """targets[side]: mảng 8 phần tử, NaN = giữ khớp đó."""
+    def set_target(self, targets: dict, now, fresh=True):
+        """targets[side]: mảng 8 phần tử, NaN = giữ khớp đó.
+
+        fresh=False: mục tiêu chỉ là giá trị cũ được bộ lọc giữ lại (không thấy người/tay): không làm mới đồng hồ
+        dead-man, để quá deadman_s robot đứng yên. Có mục tiêu mới lại sau dead-man: tăng tốc mềm lại từ đầu
+        (không lao nhanh tới mục tiêu có thể đã ở xa)."""
         self.target = {s: np.asarray(v, float).copy() for s, v in targets.items() if s in self.sides}
+        if not fresh:
+            return
+        if self.engaged and now - self.t_target > self.deadman_s:
+            self.t_engage = now
         self.t_target = now
 
     # ------------------------------------------------------------------

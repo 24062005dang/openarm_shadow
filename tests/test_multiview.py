@@ -298,3 +298,49 @@ def test_camera_stall_is_reported(monkeypatch):
         assert "front" in src.error and "Frame didn't arrive" in src.error
     finally:
         src.close()
+
+
+def test_frozen_second_camera_is_marked_stale(monkeypatch):
+    """Camera phụ treo: không được ghép khung cũ của nó mãi mãi vào triangulation."""
+    import time as _time
+    import openarm_shadow.sources as sources
+    from openarm_shadow.multiview import MultiCameraSource
+
+    class Fake:
+        mode = "fake"
+
+        def __init__(self, source, *a, **k):
+            self.n, self.freeze = 0, source == 1
+        def read(self):
+            _time.sleep(0.01)
+            self.n += 1
+            if self.freeze and self.n > 3:
+                return False, None
+            return True, types.SimpleNamespace(bgr=np.zeros((4, 4, 3), np.uint8), depth_m=None, intrinsics=None)
+        def close(self):
+            pass
+
+    monkeypatch.setattr(sources, "OpenCVSource", Fake)
+    cfg = {"fusion": {"cameras": [{"name": "front", "source": 0}, {"name": "side45", "source": 1}]},
+           "camera": {"width": 640, "height": 480}}
+    src = MultiCameraSource(cfg)
+    try:
+        _time.sleep(0.3)
+        ok, ms = src.read(timeout=1.0)
+        assert ok and ms.stale == [False, True]
+    finally:
+        src.close()
+    # Perception bỏ qua camera stale (không gọi MediaPipe cho nó)
+    cams = two_cams()
+    calls = []
+
+    class Spy(FakeView):
+        def process(self, bgr, t=None):
+            calls.append(self.cam.name)
+            return super().process(bgr, t)
+    W = human_world()
+    views = [Spy(c, W, hand_points("right", np.eye(3), W[16])) for c in cams]
+    mvp = MultiViewPerception(views, cams, {}, parallel=False)
+    blank = types.SimpleNamespace(bgr=np.zeros((480, 640, 3), np.uint8), depth_m=None, intrinsics=None)
+    fr = mvp.process(MultiSample([blank, blank], 0.0, 0.0, [False, True]))
+    assert calls == ["front"] and fr.fusion["stale"] == ["side45"]

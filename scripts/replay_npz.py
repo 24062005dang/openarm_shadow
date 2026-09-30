@@ -60,10 +60,12 @@ def main():
                     break
             time.sleep(max(0.0, dt - (time.monotonic() - now)))
     finally:
-        if args.robot == "openarm":
-            park(robot, gate, np.deg2rad(cfg["robot"]["rest_pose_deg"]), cfg["robot"]["park_vel_deg_s"])
-        robot.close()
-        cv2.destroyAllWindows()
+        try:
+            if args.robot == "openarm":
+                park(robot, gate, np.deg2rad(cfg["robot"]["rest_pose_deg"]), cfg["robot"]["park_vel_deg_s"])
+        finally:
+            robot.close()             # luôn tắt motor, kể cả khi về tư thế nghỉ bị lỗi
+            cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":

@@ -93,7 +93,7 @@ filter:
   min_cutoff: [0.6, 0.6, 0.5, 0.6, 0.5, 0.5, 0.5, 1.5]
   beta: [0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.3]
   deadband_deg: [1.5, 1.5, 2.5, 1.5, 3, 3, 3, 0]   # phần tử kẹp tính theo đơn vị 0..1 (0 = tắt)
-  jump_deg: 35
+  jump_deg: 35                 # khớp: độ; phần tử kẹp dùng đơn vị 0..1 (35 = không bao giờ chặn)
   jump_hold_s: 0.2
   min_conf: 0.6
 
