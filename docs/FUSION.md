@@ -48,6 +48,28 @@ multical (LGPL). Tổng hợp đầy đủ: tài liệu "Multi-camera fusion" tr
 Không cần hiệu chuẩn camera ↔ robot: retarget dùng khung thân dựng từ vai và hông, nên chỉ cần hai camera
 khớp nhau.
 
+## Webcam laptop mờ: làm nét
+
+Ảnh mờ thì MediaPipe đặt điểm lệch, nhất là 21 điểm bàn tay. Theo thứ tự, mỗi bước kiểm tra bằng
+`python scripts/webcam_check.py --config config/fusion_2cam.yaml` (điểm nét trong khung vàng: cao hơn = nét hơn;
+đặt bảng ChArUco cách webcam ~1,3 m và chỉ đổi một thứ mỗi lần):
+
+1. **Lau ống kính webcam** bằng khăn mềm. Vết vân tay là nguyên nhân mờ hay gặp nhất.
+2. **720p MJPG** (đã đặt trong `fusion_2cam.yaml`: 1280x720, `fourcc: MJPG`, 30 fps). 640x480 cũ chỉ có 1/3 số
+   điểm ảnh; bàn tay cách 1,3 m chỉ còn ~40 px. `webcam_check.py` in dòng `Đang chạy: 1280x720 MJPG 30 fps`; nếu vẫn
+   ra YUYV hay ~10 fps thì webcam không hỗ trợ, xem danh sách định dạng nó in ra.
+3. **Ánh sáng**: bật đủ đèn, chiếu vào người, không đứng ngược cửa sổ. Thiếu sáng -> webcam phơi sáng lâu -> tay
+   cử động bị nhoè. `camera.v4l2` trong config cho chỉnh webcam (cần `sudo apt install v4l-utils`):
+   `power_line_frequency: 1` (50 Hz, đã bật), `exposure_dynamic_framerate: 0` (không tự hạ fps),
+   `auto_exposure: 1` + `exposure_time_absolute: 100–200` (phơi sáng ngắn, bớt nhoè), `sharpness`.
+   Tên và dải giá trị tuỳ webcam: `webcam_check.py` in ra danh sách.
+4. Không nên làm nét bằng phần mềm (unsharp mask): không thêm chi tiết thật, chỉ tăng nhiễu.
+5. Nếu vẫn mờ: webcam laptop (Latitude 5490: 720p, tiêu cự cố định) là giới hạn phần cứng. Thay bằng webcam USB
+   1080p (camera 0, `source:` = chỉ số mới), hoặc dùng lại D455 làm camera trực diện.
+
+**Đổi độ phân giải webcam thì phải hiệu chuẩn lại** (`calibrate_cameras.py` tự làm lại nội tham số khi độ phân giải
+khác; `shadow.py` dừng và báo nếu không khớp).
+
 ## Các bước
 
 ```bash
@@ -105,7 +127,8 @@ ban tay 2cam 21/21 diem, nhin ro 0.99, FUSED
 
 - `lech khung`: độ lệch thời gian giữa hai khung đã ghép (chờ tối đa `sync_tol_s` = 25 ms cho khung khớp, không có
   thì lấy khung gần nhất). Bình thường < 20 ms; thường xuyên > 30 ms là một camera đang rớt khung (USB 2, cáp kém).
-- `2cam`/`1cam`: số camera dùng cho điểm đó; `Npx`: sai số chiếu lại lớn nhất (tốt < 10 px).
+- `2cam`/`1cam`: số camera dùng cho điểm đó; `Npx`: sai số chiếu lại lớn nhất, quy đổi về ảnh 640x480 để
+  webcam 720p và D435i so được với nhau (1 px ~ 0,1°; tốt < 10 px).
 - `D`: đã dùng depth (khớp nghiệm 2D, hoặc phân xử khi hai camera mâu thuẫn).
 - `!`: depth nằm **xa hơn** nghiệm 2D → có mâu thuẫn không phân xử được; độ tin cậy điểm đó bị giảm một nửa.
 - `nhin ro`: mức lòng bàn tay quay về phía camera tốt nhất (1 = nhìn thẳng, 0 = nhìn cạnh).

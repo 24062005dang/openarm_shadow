@@ -124,6 +124,7 @@ scripts/replay_npz.py        phát .npz qua SafetyGate
 scripts/check_kinematics.py  kiểm tra động học + retarget
 scripts/extract_kinematics.py sinh lại data JSON từ URDF
 scripts/list_cameras.py      liệt kê RealSense (serial, USB) và webcam
+scripts/webcam_check.py      độ nét, fps, định dạng và control của webcam
 scripts/make_charuco_board.py in bảng ChArUco A4
 scripts/calibrate_cameras.py hiệu chuẩn ngoại tham số nhiều camera -> config/cameras_calib.yaml
 tools/bringup/               script bật CAN, đọc khớp, lắc J7 (bring-up robot)

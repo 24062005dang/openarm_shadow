@@ -273,7 +273,9 @@ def test_camera_stall_is_reported(monkeypatch):
     from openarm_shadow.multiview import MultiCameraSource
 
     class Fake:
-        def __init__(self, source, *a):
+        mode = "fake"
+
+        def __init__(self, source, *a, **k):
             self.n, self.dead = 0, source == 0
         def read(self):
             _time.sleep(0.01)

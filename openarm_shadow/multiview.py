@@ -173,11 +173,16 @@ def triangulate_weighted(obs, depth=()):
     return np.linalg.lstsq(A, b, rcond=None)[0]
 
 
+REF_FX = 600.0    # tiêu cự của ảnh 640x480 thường gặp: sai số được quy về thang này
+
+
 def reprojection_px(cam, X, xy):
+    """Sai số chiếu lại, tính bằng px QUY ĐỔI về ảnh 640x480 (tiêu cự 600 px) để ngưỡng reproj_thresh_px không
+    phụ thuộc độ phân giải: webcam 1280x720 và D435i 640x480 dùng chung một ngưỡng (1 px ~ 0,1°)."""
     Xc = cam.to_cam(X)
     if Xc[2] <= 1e-6:
         return np.inf
-    return float(np.hypot(Xc[0] / Xc[2] - xy[0], Xc[1] / Xc[2] - xy[1]) * cam.fx)
+    return float(np.hypot(Xc[0] / Xc[2] - xy[0], Xc[1] / Xc[2] - xy[1]) * REF_FX)
 
 
 def fuse_point(obs, depth, reproj_px=25.0, depth_weight=0.3, depth_tol_m=0.04):
@@ -310,7 +315,7 @@ class MultiCameraSource:
     của mỗi camera còn lại. D455/D435i và webcam không đồng bộ phần cứng được với nhau."""
 
     def __init__(self, cfg):
-        from .sources import OpenCVSource, RealSenseSource
+        from .sources import OpenCVSource, RealSenseSource, webcam_options
         fc = cfg["fusion"]
         self.names = [c["name"] for c in fc["cameras"]]
         self.kinds = []
@@ -331,8 +336,9 @@ class MultiCameraSource:
                     self.srcs.append(RealSenseSource({"camera": {"realsense": rcfg}}))
                     self.kinds.append("realsense")
                 else:
-                    self.srcs.append(OpenCVSource(c["source"], cfg["camera"]["width"], cfg["camera"]["height"]))
+                    self.srcs.append(OpenCVSource(c["source"], **webcam_options(cfg)))
                     self.kinds.append("opencv")
+                    print(f"Camera '{c['name']}' (webcam {c['source']}): {self.srcs[-1].mode}")
         except BaseException:
             self.close()
             raise

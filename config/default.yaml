@@ -6,6 +6,9 @@ camera:
   width: 1280
   height: 720
   mirror_display: true   # chỉ lật ảnh khi HIỂN THỊ, MediaPipe luôn chạy trên ảnh gốc
+  fourcc: null           # webcam: MJPG để được 720p @ 30 fps (YUYV mặc định thường chỉ ~10 fps ở 720p)
+  fps: null
+  v4l2: {}               # control webcam qua v4l2-ctl, vd {sharpness: 5}; xem scripts/webcam_check.py
   realsense:
     serial: null         # để null nếu chỉ có một RealSense
     width: 640
@@ -41,7 +44,7 @@ fusion:
   calib_file: config/cameras_calib.yaml   # do scripts/calibrate_cameras.py tạo
   cameras: []                # [{name, source: realsense|<chỉ số webcam>, serial, latency_s}]; camera đầu = khung tham chiếu
   sync_tol_s: 0.025          # ghép khung lệch tối đa 25 ms
-  reproj_thresh_px: 25       # sai số chiếu lại lớn hơn -> bỏ camera tệ nhất / nhờ depth phân xử
+  reproj_thresh_px: 25       # px quy đổi ảnh 640x480; lớn hơn -> bỏ camera tệ nhất / nhờ depth phân xử
   depth_weight: 0.3          # trọng số depth RealSense so với 2D
   depth_consistency_m: 0.04  # depth lệch nghiệm 2D hơn mức này thì không dùng
   min_visibility: 0.3        # điểm Pose có visibility thấp hơn thì bỏ ở camera đó

@@ -21,10 +21,18 @@ fusion:
   calib_file: config/cameras_calib.yaml
 
 camera:
-  # Độ phân giải webcam: phải giống lúc hiệu chuẩn (chương trình kiểm tra). 640x480 để webcam giữ 30 fps
-  # (1280x720 ở định dạng mặc định YUYV nhiều webcam laptop chỉ ra ~10 fps).
-  width: 640
-  height: 480
+  # Webcam laptop: 1280x720 định dạng MJPG để vẫn 30 fps (YUYV mặc định chỉ ~10 fps ở 720p). Nhiều điểm ảnh hơn
+  # trên bàn tay -> MediaPipe Hand chính xác hơn. Phải giống lúc hiệu chuẩn (chương trình kiểm tra):
+  # đổi độ phân giải thì chạy lại calibrate_cameras.py. Kiểm tra độ nét/fps: python scripts/webcam_check.py
+  width: 1280
+  height: 720
+  fourcc: MJPG
+  fps: 30
+  v4l2:                           # cần: sudo apt install v4l-utils. Tên control: webcam_check.py in ra
+    power_line_frequency: 1       # 50 Hz (điện VN): hết sọc nhấp nháy dưới đèn huỳnh quang/LED
+    # exposure_dynamic_framerate: 0  # không tự hạ fps khi tối (ảnh tối hơn nhưng ít nhoè chuyển động)
+    # auto_exposure: 1               # 1 = chỉnh tay; kèm exposure_time_absolute: 150 (đơn vị 0,1 ms) nếu tay nhoè
+    # sharpness: 4                   # tăng nét của chính webcam (thang đo xem webcam_check.py)
   realsense:
     width: 640
     height: 480
