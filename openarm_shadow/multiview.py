@@ -11,6 +11,8 @@ fusion.cameras, thường là camera trực diện): x phải, y xuống, z ra x
 - stereohand (MIT): mỗi camera một luồng chụp, ghép khung theo thời điểm.
 - Fortini et al. 2023 (trọng số theo góc nhìn) và AnyTeleop 2023 (ưu tiên camera tin cậy nhất): trọng số của
   một camera cho các điểm bàn tay tăng khi camera đó nhìn thẳng vào lòng/lưng bàn tay.
+- ATHENA (MIT, Mulla & Michaels 2025): bàn tay ở một camera phải nằm gần cổ tay Pose đã triangulate chiếu vào
+  camera đó, không thì bỏ bàn tay ở camera đó (tay người khác, gán nhầm tay). Xem thêm handfusion.py.
 """
 from __future__ import annotations
 
@@ -26,9 +28,10 @@ import numpy as np
 import yaml
 
 from .geometry import unit
+from .handfusion import HandShape, PalmModel, hand_forearm_angle
 from .perception import (ArmObs, Frame, H_INDEX_MCP, H_INDEX_TIP, H_MIDDLE_MCP, H_PINKY_MCP, H_THUMB_TIP,
                          H_WRIST, L_EL, L_HIP, L_SH, L_WR, R_EL, R_HIP, R_SH, R_WR, ARM_IDX, body_frame,
-                         open_finger_count, palm_frame_from_depth, rotation_distance, sample_depth,
+                         open_finger_count, rotation_distance, sample_depth,
                          slerp_rotation)
 
 BODY_IDS = (L_SH, R_SH, L_EL, R_EL, L_WR, R_WR, L_HIP, R_HIP)
@@ -270,8 +273,11 @@ class HandOrientationTracker:
     - Mất quan sát: giữ hướng cũ tối đa hold_frames khung rồi mới báo NONE (không tự nhận hướng lật).
     """
 
-    def __init__(self, alpha=0.6, hold_frames=8, ambiguous_quality=0.35, max_jump_deg=100.0, confirm_frames=4):
-        self.alpha, self.hold, self.amb_q = alpha, hold_frames, ambiguous_quality
+    def __init__(self, alpha=0.6, hold_frames=8, ambiguous_quality=0.35, max_jump_deg=100.0, confirm_frames=4,
+                 alpha_max=0.85):
+        # alpha: tỉ lệ nhận hướng mới khi nhìn KÉM (nhiều làm mượt); alpha_max: khi nhìn rõ (ít trễ, để cổ tay
+        # không chậm hơn cánh tay; bộ lọc từng khớp phía sau vẫn làm mượt).
+        self.alpha, self.alpha_max, self.hold, self.amb_q = alpha, max(alpha, alpha_max), hold_frames, ambiguous_quality
         self.max_jump, self.confirm = np.deg2rad(max_jump_deg), confirm_frames
         self.R, self.miss, self.jumps = None, 0, 0
 
@@ -296,7 +302,8 @@ class HandOrientationTracker:
             if self.jumps < self.confirm:
                 return self.R, "HOLD"
         self.jumps = 0
-        self.R = slerp_rotation(self.R, R, self.alpha)
+        k = float(np.clip((quality - self.amb_q) / max(1.0 - self.amb_q, 1e-6), 0.0, 1.0))
+        self.R = slerp_rotation(self.R, R, self.alpha + (self.alpha_max - self.alpha) * k)
         return self.R, mode
 
 
@@ -438,6 +445,19 @@ class MultiViewPerception:
         self.depth_cfg = fc.get("depth", {})
         oc = fc.get("orientation", {})
         self.trackers = {s: HandOrientationTracker(**oc) for s in ("right", "left")}
+        hc = fc.get("hand", {})
+        # Trọng số tin cậy từng camera (fusion.cameras[i].weight, mặc định 1): webcam mờ đặt thấp hơn.
+        cams_cfg = fc.get("cameras") or []
+        self.view_weight = [float(cams_cfg[i].get("weight", 1.0)) if i < len(cams_cfg) else 1.0
+                            for i in range(len(cameras))]
+        self.hand_gate_px = float(hc.get("wrist_gate_px", 60.0))
+        self.hand_ref_px = float(hc.get("size_ref_px", 35.0))
+        self.max_hand_forearm = float(hc.get("max_hand_forearm_deg", 100.0))
+        self.wrist_from_hand = float(hc.get("wrist_from_hand", 0.7))
+        self.wrist_agree_m = float(hc.get("wrist_agree_m", 0.08))
+        self.shapes = {s: HandShape() for s in ("right", "left")}
+        self.palms = {s: PalmModel(s, max_rms_m=float(hc.get("palm_max_rms_m", 0.012)))
+                      for s in ("right", "left")}
         self._facing = {s: None for s in ("right", "left")}
         self._body_R, self._body_reject = None, 0
         self.view_frames = []
@@ -486,6 +506,7 @@ class MultiViewPerception:
             xy = cam.normalize([[u, vv]])[0]
             return cam.to_world(np.array([xy[0] * z, xy[1] * z, z]))
 
+        cw = self.view_weight[v]
         if fr.pose_2d is not None:
             P = fr.pose_2d
             px = P[:, :2] * [w, h]
@@ -493,7 +514,7 @@ class MultiViewPerception:
             for k, i in enumerate(BODY_IDS):
                 vis = float(P[i, 2])
                 if vis >= self.min_vis:
-                    o["pose"][i] = (norm[k], vis, lift(px[i, 0], px[i, 1], dc.get("patch_radius", 3)), px[i])
+                    o["pose"][i] = (norm[k], vis * cw, lift(px[i, 0], px[i, 1], dc.get("patch_radius", 3)), px[i])
         for h2, side in fr.hands_2d:
             if side not in ("right", "left") or side in o["hand"]:
                 continue
@@ -501,9 +522,13 @@ class MultiViewPerception:
             conf = float(fr.arms[side].conf.get("hand", 0.0)) if side in fr.arms else 0.0
             if conf <= 0.0:
                 conf = 0.5
+            # Bàn tay nhỏ trên ảnh (xa, độ phân giải thấp) -> điểm kém chính xác -> trọng số thấp hơn
+            size = np.linalg.norm(px[H_MIDDLE_MCP] - px[H_WRIST]) * REF_FX / max(cam.fx, 1e-6)
+            raw_conf = conf
+            conf *= cw * float(np.clip(size / self.hand_ref_px, 0.4, 1.0))    # chỉ là trọng số tương đối
             norm = cam.normalize(px)
             lifted = [lift(px[j, 0], px[j, 1], dc.get("hand_patch_radius", 2)) for j in range(21)]
-            o["hand"][side] = (norm, conf, lifted, px)
+            o["hand"][side] = (norm, conf, lifted, px, raw_conf)
         return o
 
     # -- hợp nhất ----------------------------------------------------------------------------------------
@@ -537,26 +562,55 @@ class MultiViewPerception:
         depth_used = {}
         for side, (i_s, i_e, i_w) in ARM_IDX.items():
             ob = arms[side]
+            self._gate_hands(side, W[i_w], views_obs, info)
+            hand_root = self._fuse_hand(side, ob, views_obs, Rb, info, W[i_e], W[i_w])
             if np.all(np.isfinite(W[[i_s, i_e, i_w]])):
+                w_pt = W[i_w]
+                # Đồng bộ tay-bàn tay: cổ tay của cẳng tay (J3/J4) và gốc khung bàn tay (J5-J7) dùng CHUNG một
+                # điểm. Cổ tay của MediaPipe Hand chính xác hơn cổ tay Pose; chỉ dùng khi hai điểm gần nhau.
+                if hand_root is not None and np.linalg.norm(hand_root - W[i_w]) < self.wrist_agree_m:
+                    w_pt = (1 - self.wrist_from_hand) * W[i_w] + self.wrist_from_hand * hand_root
+                    info["points"][i_w]["hand_root"] = True
+                W[i_w] = w_pt
                 ob.s, ob.e, ob.w = (Rb.T @ (W[k] - origin) for k in (i_s, i_e, i_w))
                 ob.conf["upper"] = float(min(vis[i_s], vis[i_e]))
                 ob.conf["fore"] = float(min(vis[i_e], vis[i_w]))
             depth_used[side] = sum(info["points"][k]["depth"] > 0 for k in (i_s, i_e, i_w))
-            self._fuse_hand(side, ob, views_obs, Rb, info)
         return Frame(arms, None, [], Rb, t, depth_used=depth_used, body_origin=origin, fusion=info), W
 
-    def _fuse_hand(self, side, ob, views_obs, Rb, info):
+    def _gate_hands(self, side, wrist_w, views_obs, info):
+        """Bỏ bàn tay ở camera nào mà cổ tay của nó xa cổ tay Pose (đã triangulate) chiếu vào camera đó."""
+        rejected = 0
+        if not np.all(np.isfinite(wrist_w)):
+            info[f"hand_{side}_rejected"] = 0
+            return
+        for v, o in enumerate(views_obs):
+            if side not in o["hand"]:
+                continue
+            cam = self.cams[v]
+            pw = cam.project(np.asarray(wrist_w)[None])[0]
+            d = np.linalg.norm(o["hand"][side][3][H_WRIST] - pw) * REF_FX / max(cam.fx, 1e-6)
+            if not np.isfinite(d) or d > self.hand_gate_px:
+                del o["hand"][side]
+                rejected += 1
+        info[f"hand_{side}_rejected"] = rejected
+
+    def _fuse_hand(self, side, ob, views_obs, Rb, info, elbow_w=None, wrist_w=None):
+        """Triangulate 21 điểm, lọc đốt bất thường, hướng lòng bàn tay (Kabsch), kiểm tra với cẳng tay.
+        Trả vị trí cổ tay của bàn tay (world) hoặc None."""
         seen = [v for v, o in enumerate(views_obs) if side in o["hand"]]
         if not seen:
             ob.hand_orientation_mode = self.trackers[side].update(None, 0.0)[1]
-            return
+            info[f"hand_{side}"] = {"views": 0, "quality": 0.0, "mode": ob.hand_orientation_mode, "points": 0,
+                                    "rejected": info.get(f"hand_{side}_rejected", 0)}
+            return None
         facing = self._facing[side]
         pts = np.full((21, 3), np.nan)
         confs = np.zeros(21)
         for j in range(21):
             obs, dep = [], []
             for v in seen:
-                norm, conf, lifted, _ = views_obs[v]["hand"][side]
+                norm, conf, lifted = views_obs[v]["hand"][side][:3]
                 wv = conf * (1.0 if facing is None else 0.25 + 0.75 * facing[v])
                 obs.append((self.cams[v], norm[j], wv))
                 if lifted[j] is not None:
@@ -564,20 +618,30 @@ class MultiViewPerception:
             X, c, _ = fuse_point(obs, dep, self.reproj_px, self.depth_w, self.depth_tol)
             if X is not None:
                 pts[j], confs[j] = X, c
+        pts, dropped = self.shapes[side].filter(pts)
+        confs[~np.all(np.isfinite(pts), axis=1)] = 0.0
         ob.hand_open_fingers = open_finger_count(pts)
         if np.all(np.isfinite(pts[[H_WRIST, H_MIDDLE_MCP, H_THUMB_TIP, H_INDEX_TIP]])):
             ob.grip = float(np.linalg.norm(pts[H_THUMB_TIP] - pts[H_INDEX_TIP]) /
                             max(np.linalg.norm(pts[H_MIDDLE_MCP] - pts[H_WRIST]), 1e-6))
-        raw_R, center = palm_frame_from_depth(pts, side=side)
+        prev_q = max((self._facing[side][v] for v in seen), default=0.0) if self._facing[side] else 0.0
+        raw_R, center, fit_rms, fit_mode = self.palms[side].estimate(pts, confs[list(PALM_IDS)], prev_q)
         quality, face_v = 0.0, [0.0] * len(self.cams)
+        anat = hand_forearm_angle(raw_R, elbow_w, wrist_w)
+        if raw_R is not None and np.isfinite(anat) and anat > self.max_hand_forearm:
+            raw_R, fit_mode = None, "ANAT"          # bàn tay gập quá mức cổ tay người làm được: quan sát sai
         if raw_R is not None:
             for v, cam in enumerate(self.cams):
                 face_v[v] = abs(float(raw_R[:, 2] @ unit(center - cam.center)))
             quality = max(face_v[v] for v in seen)
             self._facing[side] = face_v
         R, mode = self.trackers[side].update(raw_R, quality)
-        ob.hand_orientation_mode = mode
-        ob.conf["hand"] = float(np.mean(confs[list(PALM_IDS)])) if raw_R is not None else 0.0
+        ob.hand_orientation_mode = mode if raw_R is not None or mode != "HOLD" else f"HOLD {fit_mode}"
+        # Độ tin cậy tuyệt đối: MediaPipe tốt nhất trong các camera thấy tay x tỉ lệ điểm lòng bàn tay có mặt
+        # (trọng số camera/kích thước chỉ dùng để trộn các camera, không hạ độ tin cậy xuống dưới min_conf).
+        palm_ok = np.count_nonzero(confs[list(PALM_IDS)] > 0) / len(PALM_IDS)
+        best = max(views_obs[v]["hand"][side][4] for v in seen)
+        ob.conf["hand"] = float(best * palm_ok) if raw_R is not None else 0.0
         if R is not None:
             ob.H = Rb.T @ R
             ob.hand_R_cam = R
@@ -587,8 +651,13 @@ class MultiViewPerception:
                 px = self.cams[0].project(axes)
                 if np.all(np.isfinite(px)):
                     ob.hand_axes_px = px
-        info[f"hand_{side}"] = {"views": len(seen), "quality": quality, "mode": mode,
-                                "points": int(np.count_nonzero(np.all(np.isfinite(pts), axis=1)))}
+        info[f"hand_{side}"] = {"views": len(seen), "quality": quality, "mode": ob.hand_orientation_mode,
+                                "points": int(np.count_nonzero(np.all(np.isfinite(pts), axis=1))),
+                                "fit": fit_mode, "fit_mm": 1000 * fit_rms if np.isfinite(fit_rms) else np.nan,
+                                "bones_dropped": dropped, "forearm_deg": anat,
+                                "rejected": info.get(f"hand_{side}_rejected", 0)}
+        root = pts[H_WRIST]
+        return root if np.all(np.isfinite(root)) and confs[H_WRIST] > 0 else None
 
     def process(self, msample: MultiSample) -> Frame:
         for cam, s in zip(self.cams, msample.views):

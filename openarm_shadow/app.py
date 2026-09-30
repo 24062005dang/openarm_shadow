@@ -69,7 +69,17 @@ def fusion_lines(fr, sides):
         out.append(f"{s}: " + " | ".join(parts))
         h = fi.get(f"hand_{s}")
         if h:
-            out.append(f"  ban tay {h['views']}cam {h['points']}/21 diem, nhin ro {h['quality']:.2f}, {h['mode']}")
+            extra = ""
+            if h.get("fit") == "KABSCH" and np.isfinite(h.get("fit_mm", np.nan)):
+                extra += f", khop long tay {h['fit_mm']:.0f}mm"
+            elif h.get("fit") == "3PT":
+                extra += ", dang hoc khuon long tay"
+            if h.get("rejected"):
+                extra += f", bo {h['rejected']} cam (xa co tay)"
+            if h.get("bones_dropped"):
+                extra += f", bo {h['bones_dropped']} diem (dot bat thuong)"
+            out.append(f"  ban tay {h['views']}cam {h['points']}/21 diem, nhin ro {h['quality']:.2f}, "
+                       f"{h['mode']}{extra}")
     return out
 
 

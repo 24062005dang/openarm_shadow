@@ -15,7 +15,9 @@
 fusion:
   cameras:
     # Webcam laptop trực diện: kê laptop cho webcam cao ngang ngực, cách người 1,2-1,5 m, thấy trọn vai-hông-tay.
-    - {name: front, source: 0, latency_s: 0.0}
+    # weight: độ tin cậy so với camera khác (mặc định 1). Webcam laptop mờ, 640x480 -> 0.7: khi hai camera
+    # lệch nhau thì nghiêng về D435i. Webcam tốt hơn thì đặt lại 1.0.
+    - {name: front, source: 0, latency_s: 0.0, weight: 0.7}
     # D435i lệch 45°, cùng độ cao, cùng khoảng cách. Chỉ có 1 RealSense nên serial để trống cũng được.
     - {name: side45, source: realsense, serial: ""}
   calib_file: config/cameras_calib.yaml

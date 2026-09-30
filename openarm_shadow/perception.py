@@ -19,6 +19,7 @@ import cv2
 import numpy as np
 
 from .geometry import make_frame, unit
+from .handfusion import assign_hands_to_wrists
 
 # chỉ số MediaPipe Pose
 NOSE, L_SH, R_SH, L_EL, R_EL, L_WR, R_WR, L_HIP, R_HIP = 0, 11, 12, 13, 14, 15, 16, 23, 24
@@ -500,20 +501,14 @@ class Perception:
                     dvis[L_HIP] = dvis[R_HIP] = 0.0
                 R_depth, origin_depth = body_frame(D, dvis)
 
-        # ghép bàn tay với cổ tay gần nhất trong ảnh (không tin nhãn handedness)
+        # Ghép bàn tay với cổ tay Pose (không tin nhãn handedness): tổng khoảng cách nhỏ nhất, mỗi cổ tay 1 bàn
+        # tay, bỏ bàn tay xa mọi cổ tay (tay người phía sau, nhận nhầm). Xem handfusion.assign_hands_to_wrists.
         sh_px = np.linalg.norm((pose_2d[L_SH, :2] - pose_2d[R_SH, :2]) * [w, h])
-        hands_2d, hand_of = [], {}
-        for i, hl in enumerate(hres.hand_landmarks or []):
-            h2 = np.array([[p.x, p.y] for p in hl])
-            best, best_d = None, 0.35 * max(sh_px, 1.0)
-            for side in ("right", "left"):
-                wr = pose_2d[ARM_IDX[side][2], :2]
-                d = np.linalg.norm((h2[H_WRIST] - wr) * [w, h])
-                if d < best_d:
-                    best, best_d = side, d
-            hands_2d.append((h2, best))
-            if best is not None and best not in hand_of:
-                hand_of[best] = i
+        h2s = [np.array([[p.x, p.y] for p in hl]) for hl in (hres.hand_landmarks or [])]
+        wrists = {side: pose_2d[ARM_IDX[side][2], :2] * [w, h] for side in ("right", "left")}
+        labels = assign_hands_to_wrists([h2[H_WRIST] * [w, h] for h2 in h2s], wrists, 0.35 * max(sh_px, 1.0))
+        hands_2d = list(zip(h2s, labels))
+        hand_of = {side: i for i, side in enumerate(labels) if side is not None}
 
         body_candidate = R_depth if R_depth is not None else R_body
         if self._body_R is None:
