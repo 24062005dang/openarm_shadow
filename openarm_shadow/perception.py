@@ -605,6 +605,13 @@ class Perception:
                     if stable_R is not None:
                         ob.H = active_R.T @ stable_R
                         ob.hand_R_cam = stable_R
+                        # Không có intrinsics: chiếu trực giao (x, y world cùng chiều x, y ảnh),
+                        # độ dài trục = khoảng cổ tay -> gốc ngón giữa trên ảnh.
+                        uv = hands_2d[hi][0] * [w, h]
+                        center_px = np.mean(uv[[H_WRIST, H_INDEX_MCP, H_MIDDLE_MCP, 13, H_PINKY_MCP]], axis=0)
+                        axis_px = np.linalg.norm(uv[H_MIDDLE_MCP] - uv[H_WRIST])
+                        ob.hand_axes_px = np.array(
+                            [center_px] + [center_px + stable_R[:2, j] * axis_px for j in range(3)])
             else:
                 self._stabilize_orientation(side, None, "NONE")
         return Frame(arms, pose_2d, hands_2d, active_R, t, depth_used, hand_depth, active_origin)

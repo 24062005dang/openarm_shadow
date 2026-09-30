@@ -49,7 +49,7 @@ class JointFilter:
         self.n = n
         self.f = [OneEuro(mc, b) for mc, b in zip(as_list(min_cutoff), as_list(beta))]
         self.dead = np.deg2rad(as_list(deadband_deg))
-        self.jump = np.deg2rad(jump_deg)
+        self.jump = np.deg2rad(as_list(jump_deg))
         self.jump_hold_s = jump_hold_s
         self.min_conf = min_conf
         self.reset()
@@ -70,7 +70,7 @@ class JointFilter:
                 self.held[i] = True
                 self.jump_since[i] = None
                 continue
-            if self.raw[i] is not None and abs(xi - self.raw[i]) > self.jump:
+            if self.raw[i] is not None and abs(xi - self.raw[i]) > self.jump[i]:
                 if self.jump_since[i] is None:
                     self.jump_since[i] = t
                 if t - self.jump_since[i] < self.jump_hold_s:

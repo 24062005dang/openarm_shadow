@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -164,6 +166,34 @@ def test_joint_filter_holds_low_conf_and_rejects_jump():
     assert held[1] and not held[0]
     out2, held = jf(np.array([2.0, 0.1]), np.array([1, 1]), 0.36)       # nhảy 109 độ trong 1 khung
     assert held[0] and out2[0] == pytest.approx(out[0])
+
+
+def test_joint_filter_per_joint_jump():
+    jf = JointFilter(2, 5.0, 0.0, [0.0, 0.0], jump_deg=[30, 90], jump_hold_s=0.2, min_conf=0.6)
+    for k in range(10):
+        jf(np.array([0.0, 0.0]), np.array([1, 1]), k * 0.03)
+    _, held = jf(np.array([1.0, 1.0]), np.array([1, 1]), 0.33)          # 57 độ: vượt 30, dưới 90
+    assert held[0] and not held[1]
+
+
+def test_wrist_fast_config_tracks_faster():
+    cfg = load_config(Path(__file__).resolve().parents[1] / "config" / "wrist_fast.yaml")
+    base = load_config()["filter"]
+    fast = cfg["filter"]
+    mk = lambda fc: JointFilter(8, fc["min_cutoff"], fc["beta"], fc["deadband_deg"], fc["jump_deg"],
+                                fc["jump_hold_s"], fc["min_conf"])
+    lag = {}
+    for name, fc in (("base", base), ("fast", fast)):
+        jf, t = mk(fc), 0.0
+        for k in range(20):                        # đứng yên ở 0, ~11 fps
+            jf(np.zeros(8), np.ones(8), k / 11)
+        for k in range(20, 26):                    # lật J7 lên 90° trong ~0.5 s
+            x = np.zeros(8)
+            x[6] = np.deg2rad(90) * min(1.0, (k - 19) / 5)
+            out, _ = jf(x, np.ones(8), k / 11)
+        lag[name] = 90 - np.rad2deg(out[6])
+    assert lag["fast"] < 0.5 * lag["base"]
+    assert cfg["safety"]["max_vel_deg_s"][:4] == load_config()["safety"]["max_vel_deg_s"][:4]
 
 
 # ---------------- an toàn ----------------
