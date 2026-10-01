@@ -245,7 +245,9 @@ class OpenArmCANRobot:
             raise
         self.enabled, self.t_enable = True, time.monotonic()
 
-    def send(self, cmd):
+    def send(self, cmd, dq=None):
+        """cmd[side]: 7 góc URDF + kẹp. dq[side] (tuỳ chọn): vận tốc mong muốn 7 khớp (rad/s, URDF) gửi vào trường
+        dq của lệnh MIT (feedforward); None = 0 như trước."""
         if not self.enabled:
             raise RobotFault("send() khi chưa enable")
         ramp = min(1.0, (time.monotonic() - self.t_enable) / self.gain_ramp_s)
@@ -254,8 +256,12 @@ class OpenArmCANRobot:
         for s, a in self.arms.items():
             q_m = np.clip(a.to_motor(cmd[s][:7]), a.mlo, a.mhi)
             ff = np.zeros(7) if tau is None else a.sign * tau[s]
+            dq_m = np.zeros(7)
+            if dq is not None and dq.get(s) is not None:
+                dq_m = a.sign * np.nan_to_num(np.asarray(dq[s][:7], float))
+                dq_m[(q_m <= a.mlo) | (q_m >= a.mhi)] = 0.0       # ở chốt giới hạn motor: không đẩy thêm
             a.arm.get_arm().mit_control_all(
-                [oa.MITParam(float(a.kp[i] * ramp), float(a.kd[i]), float(q_m[i]), 0.0, float(ff[i]))
+                [oa.MITParam(float(a.kp[i] * ramp), float(a.kd[i]), float(q_m[i]), float(dq_m[i]), float(ff[i]))
                  for i in range(7)])
             if a.grip_on and np.isfinite(cmd[s][7]):
                 a.arm.get_gripper().mit_control_all(

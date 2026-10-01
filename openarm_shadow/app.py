@@ -33,6 +33,7 @@ class Controller(threading.Thread):
         self.running = True
         self.error = None
         self.cmd = None
+        self.trace = None             # list -> ghi (t, lệnh, đo) mỗi nhịp điều khiển
 
     def run(self):
         t_prev = time.monotonic()
@@ -42,8 +43,16 @@ class Controller(threading.Thread):
                 with self.lock:
                     cmd = self.gate.step(now - t_prev, now)
                     self.cmd = {s: v.copy() for s, v in cmd.items()}
+                    dq = None if self.gate.dq is None else {s: v.copy() for s, v in self.gate.dq.items()}
                 t_prev = now
-                self.robot.send(self.cmd)
+                if dq is not None:
+                    self.robot.send(self.cmd, dq)
+                else:
+                    self.robot.send(self.cmd)
+                if self.trace is not None:          # ghi 100 Hz: lệnh và góc đo (đo độ trễ, scripts/measure_lag.py)
+                    meas = self.robot.read()
+                    self.trace.append((now, {s: self.cmd[s].copy() for s in self.cmd},
+                                       {s: np.asarray(meas[s], float).copy() for s in meas}))
                 time.sleep(max(0.0, self.dt - (time.monotonic() - now)))
         except Exception as e:     # lỗi phần cứng: dừng vòng điều khiển, luồng chính sẽ thoát an toàn
             self.error = e
@@ -192,7 +201,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
         cap = open_source(source, cfg)
         perc = Perception(cfg["models"]["pose"], cfg["models"]["hand"], min_conf=cfg["models"]["min_conf"],
                           depth_cfg=cfg["camera"].get("realsense"), orientation_cfg=cfg.get("orientation"))
-    robot = real = ctl = gate = worker = None
+    robot = real = ctl = gate = worker = trace = None
     log = {"t": []}
     # Mọi thứ sau khi mở camera nằm trong try: lỗi ở bất kỳ bước nào (kể cả ngay sau khi bật motor) vẫn
     # về tư thế nghỉ và tắt motor, đóng camera.
@@ -220,7 +229,9 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                 raise SystemExit("Huỷ.")
             robot.enable()
 
+        trace = [] if record else None
         ctl = Controller(robot, gate, cfg["robot"]["control_hz"])
+        ctl.trace = trace
         ctl.start()
         rest = np.deg2rad(np.asarray(cfg["robot"]["rest_pose_deg"], float))
         log = {"t": [], **{f"target_{s}": [] for s in pipe.robot_sides}, **{f"cmd_{s}": [] for s in pipe.robot_sides}}
@@ -277,7 +288,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                     auto_countdown = None
             targets = pipe.step(fr)
             with ctl.lock:
-                gate.set_target(targets, time.monotonic(), fresh=pipe.fresh)
+                gate.set_target(targets, time.monotonic(), fresh=pipe.fresh, t_frame=fr.t)
                 cmd = {s: v.copy() for s, v in gate.cmd.items()}
                 status = gate.status
             if record:
@@ -380,6 +391,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                     ctl.join()
                     park(robot, gate, rest, cfg["robot"]["park_vel_deg_s"])
                     ctl = Controller(robot, gate, cfg["robot"]["control_hz"])
+                    ctl.trace = trace
                     ctl.start()
                 elif k in (ord("q"), 27):
                     print("Thoát (phím q/Esc).")
@@ -409,5 +421,10 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
             cap.close()
             cv2.destroyAllWindows()
             if record and log["t"]:
+                if trace:
+                    log["ctl_t"] = [x[0] for x in trace]
+                    for s in trace[0][1]:
+                        log[f"ctl_cmd_{s}"] = [x[1][s] for x in trace]
+                        log[f"ctl_meas_{s}"] = [x[2][s] for x in trace]
                 np.savez(record, **{k: np.asarray(v) for k, v in log.items()})
                 print("Đã lưu", record)

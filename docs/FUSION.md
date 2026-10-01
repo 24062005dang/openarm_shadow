@@ -100,7 +100,27 @@ python scripts/shadow.py --source multi --robot openarm --arms right \
 # 6) Mở cổ tay, bám nhanh (vẫn giữ giới hạn tốc độ, tăng tốc mềm, chặn bước nhảy):
 python scripts/shadow.py --source multi --robot openarm --arms right \
     --config config/wrist_real_30.yaml --config config/fusion_2cam.yaml --config config/fusion_real_fast.yaml
+
+# 7) (tuỳ chọn) Bám theo vận tốc + gửi vận tốc xuống motor: thêm --config config/velocity_ff.yaml ở CUỐI.
+#    Đo trước/sau: thêm --record run.npz rồi
+python scripts/measure_lag.py run.npz
 ```
+
+## Độ trễ và cách đo
+
+Mô phỏng (camera 15 fps, giả định camera + nhận diện 120 ms) cho thấy trễ nằm ở:
+
+| Khâu | Trễ | Đã xử lý |
+| --- | --- | --- |
+| Bộ lọc One Euro J1-J4 (beta 0.02) | 130-200 ms | fusion_real_fast: beta 0.5 -> ~70 ms; Pose nhiễu lớn thì đứng yên rung hơn, hạ về 0.2 nếu cần |
+| Giới hạn tốc độ khi tay nhanh hơn giới hạn | rất lớn (vd 440 ms) | nâng dần trong fusion_real_fast.yaml |
+| SafetyGate kiểu cũ: lao tới mục tiêu rồi đứng chờ khung sau | ~1/2 khung + giật theo nhịp 15 Hz | `velocity_tracking`: chạy đều theo vận tốc mục tiêu, giới hạn gia tốc |
+| Motor nhận dq = 0: kd hãm chuyển động | kd/kp: ~70 ms cổ tay, ~40 ms J1 | `velocity_tracking.feedforward`: gửi vận tốc lệnh làm dq |
+
+`config/velocity_ff.yaml` bật hai mục cuối (mô phỏng cổ tay ±40° 0,3 Hz: trễ mục tiêu -> motor 110 -> ~0 ms, sai số
+5,8 -> 1,9°). Mất người/tay thì thôi ngoại suy ngay (không trôi tiếp), đứng yên không rung hơn kiểu cũ.
+`--record run.npz` giờ ghi thêm lệnh và góc đo 100 Hz; `scripts/measure_lag.py run.npz` in trễ mục tiêu -> lệnh,
+lệnh -> đo, mục tiêu -> đo cho từng khớp, để kiểm chứng trên robot thật.
 
 ## Chế độ nhẹ `body_source: front` (mặc định trong fusion_2cam.yaml)
 
@@ -154,8 +174,9 @@ right: vai/khuyu/co tay tu Pose camera 0                        (chế độ fro
 ban tay 2cam 21/21 diem, nhin ro 0.99, TRACKING, khop long tay 3mm | nguon: 3d+rgb:front+depth:side45
 ```
 
-- `lech khung`: độ lệch thời gian giữa hai khung đã ghép (chờ tối đa `sync_tol_s` = 25 ms cho khung khớp, không có
-  thì lấy khung gần nhất). Bình thường < 20 ms; thường xuyên > 30 ms là một camera đang rớt khung (USB 2, cáp kém).
+- `lech khung`: độ lệch thời gian giữa hai khung đã ghép. Chờ tối đa `pair_wait_s` cho khung lệch <= `sync_tol_s`;
+  khung phụ lệch > `max_skew_s` (40 ms) thì KHÔNG ghép lần đó (màn hình báo `MAT KHUNG`), để không triangulate hai
+  tư thế khác thời điểm. Bình thường < 20 ms; thường xuyên > 30 ms là một camera đang rớt khung (USB 2, cáp kém).
 - `2cam`/`1cam`: số camera dùng cho điểm đó; `Npx`: sai số chiếu lại lớn nhất, quy đổi về ảnh 640x480 để
   webcam 720p và D435i so được với nhau (1 px ~ 0,1°; tốt < 10 px).
 - `D`: đã dùng depth (khớp nghiệm 2D, hoặc phân xử khi hai camera mâu thuẫn).

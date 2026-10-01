@@ -15,7 +15,7 @@ safety:
 filter:
   #           J1    J2    J3    J4    J5   J6   J7   kẹp
   min_cutoff: [0.8, 0.8, 0.7, 0.8, 1.5, 1.5, 1.5, 1.5]
-  beta:       [0.05, 0.05, 0.05, 0.05, 1.0, 1.0, 1.0, 0.3]
+  beta:       [0.5, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 0.3]       # J1-J4 0.5: bớt ~70 ms trễ; đứng yên rung hơn nếu Pose nhiễu -> hạ về 0.2
   deadband_deg: [1.0, 1.0, 1.5, 1.0, 1.5, 1.5, 1.5, 0]
   # Bước nhảy lớn hơn jump_deg trong 1 khung bị giữ jump_hold_s rồi mới nhận (chỉ làm chậm, không chặn hẳn).
   # Chống lật hướng tay là việc của OrientationFusion (đổi > 100° cần 3 khung, lúc chờ cổ tay đứng yên);

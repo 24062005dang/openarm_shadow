@@ -19,7 +19,7 @@ class SimRobot:
     def enable(self):
         pass
 
-    def send(self, cmd):
+    def send(self, cmd, dq=None):
         for s in self.sides:
             self.q[s] = np.asarray(cmd[s], float).copy()
 

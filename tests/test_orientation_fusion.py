@@ -144,3 +144,37 @@ def test_side_camera_seeing_other_hand_is_rejected_in_front_mode():
     blank = types.SimpleNamespace(bgr=np.zeros((480, 640, 3), np.uint8), depth_m=None, intrinsics=None)
     fr = mvp.process(MultiSample([blank, blank], 0.0))
     assert fr.fusion["hand_right"]["rejected"] == 1 and fr.fusion["hand_right"]["views"] == 1
+
+
+def test_front_gate_rejects_other_hand_on_line_of_sight():
+    """Bàn tay khác nằm ĐÚNG trên tia nhìn của camera 0 qua cổ tay người điều khiển (khớp cổ tay giữa 2 camera)
+    nhưng tư thế khác: phải bị loại vì cả lòng bàn tay không khớp."""
+    cams = two_cams()
+    W = human_world()
+    hand = hand_points("right", _hand_R(), W[16])
+    C0 = cams[0].center
+    far_wrist = C0 + 1.35 * (W[16] - C0)                     # sau lưng người, cùng tia nhìn camera 0
+    other = hand_points("right", rot([0, 0, 1], np.deg2rad(70)) @ _hand_R(), far_wrist)
+    views = [FrontView(cams[0], W, hand, seed=0), HandOnlyView(cams[1], W, other, seed=1)]
+    mvp = MultiViewPerception(views, cams, {"reproj_thresh_px": 25, "body_source": "front"}, parallel=False)
+    blank = types.SimpleNamespace(bgr=np.zeros((480, 640, 3), np.uint8), depth_m=None, intrinsics=None)
+    fr = mvp.process(MultiSample([blank, blank], 0.0))
+    assert fr.fusion["hand_right"]["rejected"] == 1
+
+
+def test_late_secondary_frame_is_not_fused():
+    """Khung camera phụ lệch 60 ms (chưa tới 100 ms) trước đây vẫn bị ghép; giờ bị bỏ (max_skew_s 40 ms)."""
+    import threading
+    from collections import deque
+    from openarm_shadow.multiview import MultiCameraSource
+    S = types.SimpleNamespace(bgr=np.zeros((2, 2, 3), np.uint8))
+    src = MultiCameraSource.__new__(MultiCameraSource)
+    src.tol, src.pair_wait = 0.025, 0.0
+    src.stale_s = 0.04
+    src.cond, src.running, src.last_ref_t = threading.Condition(), True, -1.0
+    src.buf = [deque([(10.0, S)]), deque([(9.94, S)])]
+    ok, ms = src.read(timeout=0.2)
+    assert ok and ms.stale == [False, True]
+    src.buf = [deque([(10.1, S)]), deque([(10.12, S)])]
+    ok, ms = src.read(timeout=0.2)
+    assert ok and ms.stale == [False, False] and abs(ms.skew_s - 0.02) < 1e-9

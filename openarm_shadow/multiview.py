@@ -334,7 +334,10 @@ class MultiCameraSource:
         self.kinds = []
         self.tol = float(fc.get("sync_tol_s", 0.025))
         # Khung của camera phụ cũ hơn mức này so với camera tham chiếu = camera đó đang treo: không dùng khung cũ.
-        self.stale_s = float(fc.get("stale_s", max(4 * self.tol, 0.1)))
+        # Khung camera phụ lệch thời gian quá max_skew_s so với khung tham chiếu thì KHÔNG ghép (coi như camera đó
+        # không có khung lần này). Trước đây chỉ loại khi > 100 ms, nên khung lệch 40-60 ms vẫn bị triangulate
+        # chung: tay đang di chuyển 1 m/s lệch 4-6 cm giữa hai ảnh.
+        self.stale_s = float(fc.get("max_skew_s", fc.get("stale_s", max(1.6 * self.tol, 0.04))))
         # Chờ tối đa bao lâu cho khung khớp của camera phụ; 0 = không chờ, lấy khung gần nhất đang có (không khựng)
         self.pair_wait = float(fc.get("pair_wait_s", self.tol))
         n_rs = sum(str(c.get("source", "realsense")).lower() in REALSENSE_NAMES for c in fc["cameras"])
@@ -406,7 +409,9 @@ class MultiCameraSource:
                 while True:
                     cands = list(self.buf[i])
                     best = min(cands, key=lambda ts: abs(ts[0] - t_ref)) if cands else None
-                    newer = best is not None and best[0] >= t_ref - self.tol
+                    # Đủ gần, hoặc đã có khung mới hơn t_ref (chờ thêm chỉ có khung mới hơn nữa) -> thôi chờ
+                    newer = best is not None and (abs(best[0] - t_ref) <= self.tol or
+                                                  any(ts[0] >= t_ref for ts in cands))
                     # Chưa có khung nào (vd RealSense đang khởi động): chờ tới hết timeout, không theo pair_wait
                     left = (wait_until if cands else deadline) - time.monotonic()
                     if newer or left <= 0 or not self.running:
@@ -501,6 +506,7 @@ class MultiViewPerception:
         self.view_weight = [float(cams_cfg[i].get("weight", 1.0)) if i < len(cams_cfg) else 1.0
                             for i in range(len(cameras))]
         self.hand_gate_px = float(hc.get("wrist_gate_px", 60.0))
+        self.palm_gate_px = float(hc.get("palm_gate_px", 18.0))
         self.hand_ref_px = float(hc.get("size_ref_px", 35.0))
         self.max_hand_forearm = float(hc.get("max_hand_forearm_deg", 100.0))
         self.wrist_from_hand = float(hc.get("wrist_from_hand", 0.7))
@@ -679,9 +685,16 @@ class MultiViewPerception:
                 continue
             ok = False
             if h0 is not None:
-                X = triangulate_weighted([(cam0, h0[0][H_WRIST], 1.0), (self.cams[v], hv[0][H_WRIST], 1.0)])
-                ok = X is not None and max(reprojection_px(cam0, X, h0[0][H_WRIST]),
-                                           reprojection_px(self.cams[v], X, hv[0][H_WRIST])) <= self.hand_gate_px
+                # Cả 5 điểm lòng bàn tay (không chỉ cổ tay) phải khớp giữa 2 camera: một bàn tay khác nằm đúng trên
+                # tia nhìn của camera 0 qua cổ tay vẫn khớp được 1 điểm, nhưng không khớp được cả lòng bàn tay.
+                errs = []
+                for j in PALM_IDS:
+                    X = triangulate_weighted([(cam0, h0[0][j], 1.0), (self.cams[v], hv[0][j], 1.0)])
+                    errs.append(np.inf if X is None else max(reprojection_px(cam0, X, h0[0][j]),
+                                                             reprojection_px(self.cams[v], X, hv[0][j])))
+                # Giới hạn: bàn tay khác CÙNG tư thế nằm đúng sau lưng trên tia nhìn camera 0 vẫn khớp (sai ~8 px):
+                # 2 camera RGB không phân biệt được độ sâu dọc tia nhìn này; khác hướng >= ~60° thì bị loại.
+                ok = float(np.median(errs)) <= self.palm_gate_px
             elif wr0 is not None and hv[2][H_WRIST] is not None:
                 p0 = cam0.project(np.asarray(hv[2][H_WRIST])[None])[0]
                 ok = bool(np.all(np.isfinite(p0))) and \
@@ -739,6 +752,7 @@ class MultiViewPerception:
         facing = self._facing[side]
         pts = np.full((21, 3), np.nan)
         confs = np.zeros(21)
+        stereo_palm = 0                      # số điểm lòng bàn tay thật sự được 2 camera đồng ý
         for j in range(21):
             obs, dep = [], []
             for v in seen:
@@ -747,9 +761,12 @@ class MultiViewPerception:
                 obs.append((self.cams[v], norm[j], conf, tv))
                 if lifted[j] is not None:
                     dep.append((self.cams[v], lifted[j], conf * tv))
-            X, c, _ = fuse_point(obs, dep, self.reproj_px, self.depth_w, self.depth_tol)
+            X, c, pinfo = fuse_point(obs, dep, self.reproj_px, self.depth_w, self.depth_tol)
             if X is not None:
                 pts[j], confs[j] = X, c
+                if j in PALM_IDS and pinfo["views"] >= 2 and not pinfo["conflict"] and \
+                        not (pinfo["depth"] and pinfo["err_px"] > self.reproj_px):
+                    stereo_palm += 1
         pts, dropped = self.shapes[side].filter(pts)
         confs[~np.all(np.isfinite(pts), axis=1)] = 0.0
         # Số ngón xoè: từ điểm 3D; thiếu điểm (chỉ 1 camera thấy, không depth) thì lấy từ điểm world của từng camera
@@ -778,7 +795,7 @@ class MultiViewPerception:
         n_ok = int(np.count_nonzero(pc > 0))
         palm_conf = float(np.mean(pc[pc > 0]) * min(1.0, n_ok / 4)) if raw_R is not None and n_ok else 0.0
         R, mode, o_conf, used = self.orient[side].update(raw_R, max(palm_conf, 0.05), extras,
-                                                         base_strong=raw_R is not None and len(seen) >= 2)
+                                                         base_strong=raw_R is not None and stereo_palm >= 3)
         ob.hand_orientation_mode = mode if (raw_R is not None or mode not in ("HOLD",)) else f"HOLD {fit_mode}"
         ob.conf["hand"] = min(o_conf, palm_conf) if (used and used[0] == "3d") else o_conf
         if R is not None:

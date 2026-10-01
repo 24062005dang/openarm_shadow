@@ -32,5 +32,6 @@ robot:
   urdf_to_motor:
     right:
       sign: [1, 1, 1, 1, 1, 1, 1]
-      # J4 -7.7: đo 30/09 khi tay thả thẳng. J5-J7: đo 29/09 ở tư thế nghỉ. Đo lại mỗi buổi.
-      offset_deg: [0, 0, 0, -7.7, 4.8, -4.5, 4.1]
+      # Đồng bộ với first_real.yaml / d455_wrist_real.yaml (đo 01/10): J4 -3.0, J5-J7 = 0. Đo lại mỗi buổi.
+      # (Trước đây file này còn số cũ -7.7 / 4.8 / -4.5 / 4.1 trong khi hai file kia đã sửa.)
+      offset_deg: [0, 0, 0, -3.0, 0, 0, 0]

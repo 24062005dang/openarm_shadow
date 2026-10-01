@@ -43,7 +43,8 @@ orientation:
 fusion:
   calib_file: config/cameras_calib.yaml   # do scripts/calibrate_cameras.py tạo
   cameras: []                # [{name, source: realsense|<chỉ số webcam>, serial, latency_s, weight}]; camera đầu = khung tham chiếu
-  sync_tol_s: 0.025          # ghép khung lệch tối đa 25 ms
+  sync_tol_s: 0.025          # chờ khung camera phụ lệch <= 25 ms (tối đa pair_wait_s)
+  max_skew_s: 0.04           # khung phụ lệch hơn mức này: không ghép lần này (camera đó coi như không có khung)
   reproj_thresh_px: 25       # px quy đổi ảnh 640x480; lớn hơn -> bỏ camera tệ nhất / nhờ depth phân xử
   depth_weight: 0.3          # trọng số depth RealSense so với 2D
   depth_consistency_m: 0.04  # depth lệch nghiệm 2D hơn mức này thì không dùng
@@ -63,6 +64,7 @@ fusion:
                        alpha: 0.65, fast_alpha: 0.92, fast_angle_deg: 60, hold_frames: 12}
   hand:                      # làm sạch bàn tay 3D (openarm_shadow/handfusion.py)
     wrist_gate_px: 60        # bàn tay ở 1 camera xa cổ tay Pose chiếu vào camera đó hơn mức này -> bỏ (px quy đổi 640x480)
+    palm_gate_px: 18         # chế độ front: 5 điểm lòng bàn tay giữa 2 camera lệch (trung vị) hơn mức này -> bỏ camera phụ
     size_ref_px: 35          # bàn tay nhỏ hơn (cổ tay -> gốc ngón giữa, px) thì trọng số giảm (tối thiểu 0,4)
     max_hand_forearm_deg: 100  # ngón tay lệch cẳng tay hơn mức này (cổ tay người không gập được) -> bỏ khung
     palm_max_rms_m: 0.012    # Kabsch 5 điểm lòng bàn tay khớp kém hơn -> bỏ khung
@@ -102,6 +104,9 @@ filter:
   landmark_ema_alpha: 0.8      # EMA trên điểm mốc (Hand Shadowing dùng 0.8)
   # One Euro cho 8 phần tử: J1..J7, kẹp
   min_cutoff: [0.6, 0.6, 0.5, 0.6, 0.5, 0.5, 0.5, 1.5]
+  # beta (đơn vị rad/s): bộ lọc tự nới khi khớp chuyển động. 0.02 gần như không nới -> J1-J4 trễ 130-200 ms.
+  # Tăng lên 0.4-0.5 (như fusion_real_fast.yaml) bớt ~70 ms trễ nhưng đứng yên rung hơn khi nhiễu Pose lớn (3-5°):
+  # đo bằng scripts/measure_lag.py trước khi đổi mặc định.
   beta: [0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.3]
   deadband_deg: [1.5, 1.5, 2.5, 1.5, 3, 3, 3, 0]   # phần tử kẹp tính theo đơn vị 0..1 (0 = tắt)
   jump_deg: 35                 # khớp: độ; phần tử kẹp dùng đơn vị 0..1 (35 = không bao giờ chặn)
@@ -117,6 +122,15 @@ safety:
   grip_vel_per_s: 1.5
   deadman_s: 0.4
   engage_blend_s: 1.5
+  # Bám theo vận tốc + gửi vận tốc xuống motor (dq của MIT). Mặc định TẮT; bật bằng --config config/velocity_ff.yaml.
+  velocity_tracking:
+    enabled: false
+    gain: 8.0                # 1/s: kéo lệnh về mục tiêu
+    extrapolate_s: 0.07      # ngoại suy mục tiêu tối đa 70 ms giữa hai khung camera (bù nhịp 15 fps)
+    feedforward: true        # gửi vận tốc lệnh làm dq (bỏ "phanh" kd); false = chỉ làm mượt lệnh
+    velocity_smoothing: 0.5  # EMA vận tốc ước lượng giữa 2 khung camera (nhiễu ở 15 fps)
+    min_step_deg: 1.0        # đổi < 1° giữa 2 khung coi như đứng yên (không ngoại suy, không feedforward)
+    max_acc_deg_s2: [300, 300, 400, 400, 1500, 1500, 1500]
   # Giới hạn khớp mềm theo góc URDF. Mặc định = giới hạn của LeRobot openarm_follower (bảo thủ).
   soft_limits_deg:
     right: [[-75, 75], [-9, 90], [-85, 85], [0, 135], [-85, 85], [-40, 40], [-80, 80]]

@@ -1,0 +1,14 @@
+# Bám theo vận tốc + feedforward vận tốc xuống motor (SafetyGate.velocity_tracking). Đặt CUỐI cùng:
+#   ... --config config/wrist_real_30.yaml --config config/fusion_2cam.yaml --config config/fusion_real_fast.yaml \
+#       --config config/velocity_ff.yaml
+#
+# Khác gì: trước đây mỗi khung camera lệnh lao tới mục tiêu ở tốc độ tối đa rồi đứng chờ (vận tốc bật/tắt theo
+# nhịp 15 Hz) và motor nhận dq = 0 nên kd hãm mọi chuyển động (trễ kd/kp: ~70 ms cổ tay, ~40 ms J1). Giờ lệnh chạy
+# đều theo vận tốc ước lượng của mục tiêu, có giới hạn gia tốc, và vận tốc đó được gửi làm dq.
+# Mô phỏng cổ tay ±40° 0,3 Hz: trễ từ mục tiêu tới motor 110 -> ~0 ms, sai số 5,8 -> 1,9°.
+# Vẫn giữ: giới hạn tốc độ (max_vel_deg_s), tăng tốc mềm khi engage, dead-man (dq về 0), giới hạn góc.
+#
+# Thử: mô phỏng trước, rồi robot thật với người giữ E-stop. So trước/sau bằng --record + scripts/measure_lag.py.
+safety:
+  velocity_tracking:
+    enabled: true

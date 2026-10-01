@@ -46,6 +46,8 @@ class OpenCVSource:
             self.cap = cv2.VideoCapture(int(source) if is_index else source)
         if not self.cap.isOpened():
             raise SystemExit(f"Không mở được nguồn video: {source}")
+        if is_index:
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)     # bớt khung cũ đọng trong buffer driver (giảm trễ)
         self.warning = None
         if is_index:
             self._configure_webcam(int(source), width, height, fourcc, fps)
