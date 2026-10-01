@@ -137,7 +137,8 @@ Học từ bản Openarm_Teleop của nhóm (chạy mượt trên robot thật),
 
 Không lấy từ bản kia: tắt giới hạn tốc độ (`velocity_limit_enabled: false`), `engage_blend_s: 0` (robot lao tới
 mục tiêu trong 1 nhịp khi engage) và tắt chặn bước nhảy. `config/fusion_real_fast.yaml` thay vào đó nâng giới
-hạn cổ tay lên 90°/s (J1-J4 30-40°/s), tăng tốc mềm 1 s, giữ bước nhảy 0,15 s. Tăng dần khi đã chạy ổn.
+hạn cổ tay lên 45°/s (J1-J4 30-40°/s), tăng tốc mềm 1 s, giữ bước nhảy 0,3 s. (Bản đầu để 90°/s / 0,15 s
+làm cổ tay tự xoay nhanh khi mất hướng tay - xem mục "Cổ tay tự xoay nhanh".)
 
 ### Hiệu chuẩn (bước 3)
 
@@ -184,7 +185,24 @@ ban tay 2cam 21/21 diem, nhin ro 0.99, TRACKING, khop long tay 3mm | nguon: 3d+r
 - `nhin ro`: mức lòng bàn tay quay về phía camera tốt nhất (1 = nhìn thẳng, 0 = nhìn cạnh).
 - Trạng thái hướng bàn tay: `TRACKING` >= 2 nguồn đồng ý · `DEGRADED` chỉ 1 nguồn (vẫn điều khiển) ·
   `SWITCH?` hướng mới cách xa, đang chờ xác nhận (cổ tay đứng yên) · `HOLD` mất tay, giữ hướng cũ, cổ tay đứng yên
-  tối đa 12 khung · `LOST` mất hẳn. `nguon:` các nguồn được dùng (3d, rgb:<camera>, depth:<camera>).
+  tối đa 12 khung · `ACQUIRE` vừa thấy lại tay (sau LOST/CONFLICT, hoặc sau HOLD mà hướng mới lệch > 45°): cổ tay
+  đứng yên tới khi hướng ổn định (< 20°) 4 khung có ≥ 2 nguồn (1 nguồn: 8 khung) · `LOST` mất hẳn.
+  `nguon:` các nguồn được dùng (3d, rgb:<camera>, depth:<camera>).
+
+### Cổ tay tự xoay nhanh khi tay để ngang
+
+Bàn tay để ngang mà mép tay/đầu ngón chĩa vào camera thì lòng bàn tay gần như không nhìn thấy: MediaPipe đoán
+hướng sai hoặc lật 180°, các nguồn mâu thuẫn → `HOLD`/`CONFLICT`. Bản cũ khi thấy lại tay nhận ngay hướng mới
+(có thể sai/lật) rồi chạy tới đó ở 90°/s → cổ tay robot xoay vụt. Đã thêm 3 lớp:
+
+1. `ACQUIRE` (trên): cổ tay không nhận hướng mới cho tới khi hướng ổn định nhiều khung.
+2. SafetyGate `resume_after_s` / `resume_blend_s`: khớp nào đứng yên > 0,3 s rồi chạy lại thì tăng tốc mềm riêng
+   khớp đó trong 1 s (J1-J4 không bị ảnh hưởng khi chỉ cổ tay mất).
+3. `fusion_real_fast.yaml`: cổ tay 45°/s (trước 90), bước nhảy > 60° bị giữ 0,3 s.
+
+Vẫn nên tránh tư thế mép tay chĩa thẳng vào cả hai camera: đặt camera phụ lệch 45-60° sao cho luôn có một camera
+nhìn được lòng/mu bàn tay. Thấy `ACQUIRE`/`HOLD` lặp lại ở một tư thế = tư thế đó không quan sát được, đừng điều
+khiển cổ tay ở tư thế đó.
 
 Hiệu chuẩn tay tự động (tay thả xuôi, lòng bàn tay vào đùi) vẫn như cũ, tính theo camera đầu tiên.
 

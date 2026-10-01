@@ -60,8 +60,11 @@ fusion:
   # Hướng bàn tay nhiều nguồn (handfusion.OrientationFusion): đổi sang hướng cách > switch_deg cần switch_frames
   # khung liên tiếp (trong lúc chờ cổ tay đứng yên); nguồn lệch > max_disagree_deg bị bỏ; alpha -> fast_alpha khi
   # xoay nhanh (> fast_angle_deg/khung) để không trễ; mất tay giữ hold_frames khung (cổ tay đứng yên) rồi mới LOST.
+  # acquire_*: vừa thấy lại tay (sau LOST/CONFLICT, hoặc HOLD rồi thấy ở hướng khác > acquire_jump_deg) thì cổ tay
+  # đứng yên tới khi hướng ổn định (< acquire_stable_deg) đủ acquire_frames khung (1 nguồn tính nửa khung).
   orientation_fusion: {temporal_weight: 1.5, switch_deg: 100, switch_frames: 3, max_disagree_deg: 70,
-                       alpha: 0.65, fast_alpha: 0.92, fast_angle_deg: 60, hold_frames: 12}
+                       alpha: 0.65, fast_alpha: 0.92, fast_angle_deg: 60, hold_frames: 12,
+                       acquire_frames: 4, acquire_stable_deg: 20, acquire_jump_deg: 45}
   hand:                      # làm sạch bàn tay 3D (openarm_shadow/handfusion.py)
     wrist_gate_px: 60        # bàn tay ở 1 camera xa cổ tay Pose chiếu vào camera đó hơn mức này -> bỏ (px quy đổi 640x480)
     palm_gate_px: 18         # chế độ front: 5 điểm lòng bàn tay giữa 2 camera lệch (trung vị) hơn mức này -> bỏ camera phụ
@@ -122,6 +125,8 @@ safety:
   max_vel_deg_s: [45, 45, 60, 60, 90, 90, 90]
   grip_vel_per_s: 1.5
   deadman_s: 0.4
+  resume_after_s: 0.3        # khớp đứng yên (mất tay / hướng tay chưa chắc) lâu hơn mức này rồi chạy lại ->
+  resume_blend_s: 1.0        #   tăng tốc mềm riêng khớp đó trong 1 s (cổ tay không xoay vụt tới hướng mới)
   engage_blend_s: 1.5
   # Bám theo vận tốc + gửi vận tốc xuống motor (dq của MIT). Mặc định TẮT; bật bằng --config config/velocity_ff.yaml.
   velocity_tracking:

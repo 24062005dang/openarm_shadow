@@ -289,7 +289,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                     auto_countdown = None
             targets = pipe.step(fr)
             with ctl.lock:
-                gate.set_target(targets, time.monotonic(), fresh=pipe.fresh, t_frame=fr.t)
+                gate.set_target(targets, time.monotonic(), fresh=pipe.fresh, t_frame=fr.t, held=pipe.held)
                 cmd = {s: v.copy() for s, v in gate.cmd.items()}
                 status = gate.status
             if record:

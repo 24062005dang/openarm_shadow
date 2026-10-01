@@ -168,7 +168,7 @@ def test_camera_weight_changes_mixing_not_confidence():
     cfg = {"reproj_thresh_px": 25, "cameras": [{"name": "front", "weight": 0.7}, {"name": "side45"}]}
     mvp = MultiViewPerception(views, cams, cfg, parallel=False)
     blank = types.SimpleNamespace(bgr=np.zeros((480, 640, 3), np.uint8), depth_m=None, intrinsics=None)
-    for k in range(3):
+    for k in range(6):                                  # qua giai đoạn ACQUIRE của hướng tay
         fr = mvp.process(MultiSample([blank, blank], 0.033 * k))
     ob = fr.arms["right"]
     assert abs(ob.conf["upper"] - 0.95) < 1e-6 and abs(ob.conf["fore"] - 0.95) < 1e-6

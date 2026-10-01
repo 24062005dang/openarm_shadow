@@ -165,17 +165,24 @@ class OrientationFusion:
     - Làm mượt đầu ra thích ứng: xoay chậm thì mượt (alpha), xoay nhanh thì bám (fast_alpha) -> không trễ.
     - Độ tin cậy trả về: >= 2 nguồn đồng ý 0,9 (TRACKING); 1 nguồn 0,7 (DEGRADED, vẫn qua min_conf 0,6);
       HOLD/đang chờ đổi 0 (đóng băng cổ tay); mất quá hold_frames -> None (LOST).
+    - Nhận lại sau khi mất (LOST, CONFLICT, hoặc HOLD rồi thấy lại ở hướng khác > acquire_jump_deg): trạng thái
+      ACQUIRE, độ tin cậy 0 (cổ tay đứng yên) cho tới khi hướng ổn định (lệch < acquire_stable_deg giữa các khung)
+      đủ acquire_frames khung có >= 2 nguồn đồng ý (1 nguồn tính nửa khung). Tránh robot xoay theo một hướng đoán
+      sai ngay lúc vừa thấy lại tay (vd tay để ngang, nhìn cạnh).
     """
 
     FLIP = np.diag([1.0, -1.0, -1.0])
 
     def __init__(self, temporal_weight=1.5, switch_deg=100.0, switch_frames=3, max_disagree_deg=70.0,
-                 alpha=0.65, fast_alpha=0.92, fast_angle_deg=60.0, hold_frames=12, **_):
+                 alpha=0.65, fast_alpha=0.92, fast_angle_deg=60.0, hold_frames=12, acquire_frames=4,
+                 acquire_stable_deg=20.0, acquire_jump_deg=45.0, **_):
         self.tw, self.switch, self.switch_frames = temporal_weight, switch_deg, int(switch_frames)
         self.max_dis, self.alpha, self.fast_alpha = max_disagree_deg, alpha, max(alpha, fast_alpha)
         self.fast_angle, self.hold = fast_angle_deg, int(hold_frames)
         self.R, self.bad, self.pending, self.pending_n = None, 0, None, 0
         self.conflicts = 0
+        self.acq_frames, self.acq_stable, self.acq_jump = float(acquire_frames), acquire_stable_deg, acquire_jump_deg
+        self.acquiring, self.acq_score, self.acq_prev = True, 0.0, None
 
     @staticmethod
     def _deg(a, b):
@@ -187,6 +194,7 @@ class OrientationFusion:
         if self.R is not None and self.bad <= self.hold:
             return self.R, "HOLD", 0.0, []
         self.R = None
+        self.acquiring, self.acq_score, self.acq_prev = True, 0.0, None
         return None, "LOST", 0.0, []
 
     def update(self, base, base_conf=1.0, extras=(), base_strong=False):
@@ -228,7 +236,10 @@ class OrientationFusion:
             self.conflicts += 1
             if self.conflicts >= self.switch_frames:
                 self.R, self.conflicts = None, 0
+                self.acquiring, self.acq_score, self.acq_prev = True, 0.0, None
             return self.R, "CONFLICT", 0.0, []
+        if self.bad > 0 and self.R is not None and self._deg(self.R, best) > self.acq_jump:
+            self.acquiring, self.acq_score, self.acq_prev = True, 0.0, None   # thấy lại ở hướng khác hẳn
         self.conflicts, self.bad = 0, 0
         used = [(best, max(float(base_conf), 0.05), base_name)] + agree
         fused, total = used[0][0], used[0][1]
@@ -241,4 +252,12 @@ class OrientationFusion:
             fused = slerp_rotation(self.R, fused, a)
         self.R = fused
         state = "TRACKING" if len(used) >= 2 or base_strong else "DEGRADED"
+        if self.acquiring:
+            step = 1.0 if state == "TRACKING" else 0.5
+            stable = self.acq_prev is not None and self._deg(self.acq_prev, fused) < self.acq_stable
+            self.acq_score = self.acq_score + step if stable else step
+            self.acq_prev = fused
+            if self.acq_score < self.acq_frames:
+                return fused, "ACQUIRE", 0.0, [n for _, _, n in used]
+            self.acquiring = False
         return fused, state, (0.9 if state == "TRACKING" else 0.7), [n for _, _, n in used]

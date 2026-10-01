@@ -27,7 +27,8 @@ def test_big_real_rotation_needs_confirmation_and_freezes_wrist_meanwhile():
     of = OrientationFusion(switch_deg=100, switch_frames=3)
     # quay 150° quanh pháp tuyến lòng bàn tay (không phải quanh trục ngón): cả hai giả thuyết đều xa hướng cũ
     R0, R1 = np.eye(3), rot([0, 0, 1], np.deg2rad(150))
-    of.update(R0, 0.9, base_strong=True)
+    for _ in range(4):
+        of.update(R0, 0.9, base_strong=True)               # qua giai đoạn ACQUIRE
     confs = []
     for _ in range(2):
         R, state, conf, _ = of.update(R1, 0.9, base_strong=True)
@@ -60,8 +61,30 @@ def test_missing_holds_with_zero_conf_then_lost():
 
 def test_single_extra_source_is_degraded_but_usable():
     of = OrientationFusion()
-    R, state, conf, used = of.update(None, extras=[(np.eye(3), 0.5, "rgb:front")])
+    for _ in range(8):                                     # 1 nguồn: ACQUIRE lâu gấp đôi rồi mới điều khiển
+        R, state, conf, used = of.update(None, extras=[(np.eye(3), 0.5, "rgb:front")])
     assert state == "DEGRADED" and conf == 0.7 and used == ["rgb:front"]
+
+
+def test_reacquire_freezes_wrist_until_stable():
+    """Vừa thấy lại tay: cổ tay đứng yên (conf 0) tới khi hướng ổn định; hướng nhảy lung tung thì không bao giờ
+    được điều khiển."""
+    of = OrientationFusion(acquire_frames=4)
+    R0 = rot([0, 1, 0], 0.4)
+    confs = [of.update(R0, 0.9, base_strong=True)[2] for _ in range(6)]
+    assert confs[:3] == [0.0, 0.0, 0.0] and confs[3] > 0.6
+    of2 = OrientationFusion(acquire_frames=4)
+    rng = np.random.default_rng(0)
+    confs = [of2.update(rot(unit(rng.normal(size=3)), 1.5), 0.9, base_strong=True)[2] for _ in range(20)]
+    assert max(confs) == 0.0
+    # mất tay (HOLD) rồi thấy lại ở hướng khác 90°: phải ACQUIRE lại, không nhảy ngay
+    of = OrientationFusion(acquire_frames=4)
+    for _ in range(5):
+        of.update(R0, 0.9, base_strong=True)
+    of.update(None)
+    R1 = rot([1, 0, 0], np.deg2rad(90)) @ R0
+    R, state, conf, _ = of.update(R1, 0.9, base_strong=True)
+    assert state == "ACQUIRE" and conf == 0.0
 
 
 def test_view_options_front_mode():

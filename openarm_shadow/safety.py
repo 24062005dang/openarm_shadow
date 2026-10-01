@@ -46,6 +46,12 @@ class SafetyGate:
         self.engaged = False
         self.t_engage = 0.0
         self.status = "idle"
+        # Khớp vừa đứng yên (bộ lọc giữ: mất tay, hướng tay chưa chắc) lâu hơn resume_after_s rồi chạy lại: tăng tốc
+        # mềm riêng khớp đó trong resume_blend_s (không lao nhanh tới mục tiêu mới có thể đã ở xa).
+        self.resume_after_s = float(cfg.get("resume_after_s", 0.3))
+        self.resume_blend_s = float(cfg.get("resume_blend_s", 1.0))
+        self._held_since = {s: np.full(7, np.nan) for s in self.sides}
+        self.t_resume = {s: np.full(7, -np.inf) for s in self.sides}
         # Bám theo vận tốc (tuỳ chọn, mặc định tắt): xem _step_tracking.
         vt = cfg.get("velocity_tracking", {}) or {}
         self.vt_on = bool(vt.get("enabled", False))
@@ -75,7 +81,7 @@ class SafetyGate:
     def disengage(self):
         self.engaged = False
 
-    def set_target(self, targets: dict, now, fresh=True, t_frame=None):
+    def set_target(self, targets: dict, now, fresh=True, t_frame=None, held=None):
         """targets[side]: mảng 8 phần tử, NaN = giữ khớp đó. t_frame: thời điểm chụp khung camera tạo ra mục tiêu
         (dùng để ước lượng vận tốc cho velocity_tracking; nhận diện chạy ở luồng nền nên thời điểm nhận mục tiêu
         `now` dao động hơn thời điểm chụp). Mặc định = now.
@@ -84,6 +90,8 @@ class SafetyGate:
         dead-man, để quá deadman_s robot đứng yên. Có mục tiêu mới lại sau dead-man: tăng tốc mềm lại từ đầu
         (không lao nhanh tới mục tiêu có thể đã ở xa)."""
         self.target = {s: np.asarray(v, float).copy() for s, v in targets.items() if s in self.sides}
+        self._track_held(held if held is not None else ({s: np.ones(8, bool) for s in self.sides} if not fresh
+                                                         else None), now)
         if not fresh:
             if self.vt_on:            # mất người/tay: không ngoại suy tiếp theo vận tốc cũ
                 for s in self.sides:
@@ -123,6 +131,27 @@ class SafetyGate:
             d = min(d, dd)
         return d
 
+    def _track_held(self, held, now):
+        """held[side]: 8 cờ của bộ lọc (True = khớp đang giữ giá trị cũ). Khớp hết giữ sau > resume_after_s ->
+        bắt đầu tăng tốc mềm riêng khớp đó."""
+        if held is None:
+            return
+        for s in self.sides:
+            h = np.asarray(held.get(s, np.zeros(8, bool)), bool)[:7]
+            since = self._held_since[s]
+            start = h & np.isnan(since)
+            since[start] = now
+            resumed = ~h & ~np.isnan(since)
+            long_ = resumed & (now - np.nan_to_num(since, nan=now) > self.resume_after_s)
+            self.t_resume[s][long_] = now
+            since[resumed] = np.nan
+
+    def joint_ramp(self, s, now):
+        """Hệ số tốc độ riêng từng khớp (0,05..1) sau khi khớp đó chạy lại."""
+        if self.resume_blend_s <= 0:
+            return np.ones(7)
+        return np.array([max(0.05, smoothstep((now - t) / self.resume_blend_s)) for t in self.t_resume[s]])
+
     def _stop(self):
         for s in self.sides:
             self.v[s][:] = 0.0
@@ -143,7 +172,7 @@ class SafetyGate:
         if age > self.vt_ext:
             v_tgt = np.zeros(7)       # mục tiêu cũ hơn extrapolate_s (khung camera đến trễ): thôi đẩy theo vận tốc
         goal_ext = np.clip(goal[:7] + v_tgt * min(age, self.vt_ext), self.lo[s], self.hi[s])
-        vmax = self.max_vel * ramp
+        vmax = self.max_vel * ramp * self.joint_ramp(s, now)
         v_des = np.clip(v_tgt + self.vt_gain * (goal_ext - q), -vmax, vmax)
         v = self.v[s] + np.clip(v_des - self.v[s], -self.max_acc * dt, self.max_acc * dt)
         v = np.clip(v, -vmax, vmax)
@@ -177,7 +206,7 @@ class SafetyGate:
             if self.vt_on:
                 new[s] = self._step_tracking(s, cur, goal, ramp, dt, now)
             else:
-                vmax = np.append(self.max_vel, self.grip_vel) * ramp * dt
+                vmax = np.append(self.max_vel * self.joint_ramp(s, now), self.grip_vel) * ramp * dt
                 new[s] = cur + np.clip(goal - cur, -vmax, vmax)
         if self.vt_on:
             self.dq = {s: (self.v[s].copy() if self.vt_ff else np.zeros(7)) for s in self.sides}

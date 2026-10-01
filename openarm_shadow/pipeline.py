@@ -35,6 +35,7 @@ class ShadowPipeline:
         self.q_prev = {s: np.zeros(7) for s in self.robot_sides}
         self.last_info = {}
         self.fresh = False       # khung vừa rồi có ít nhất 1 khớp nhận giá trị mới (không phải giữ) -> dead-man
+        self.held = {s: np.ones(8, bool) for s in self.robot_sides}   # cờ giữ của bộ lọc từng khớp (SafetyGate)
         cc = cfg.get("calibration", {}).get("hand_auto", {})
         self.auto_calib_enabled = bool(cc.get("enabled", True))
         self.auto_calib_hold_s = float(cc.get("hold_s", 0.6))
@@ -203,6 +204,7 @@ class ShadowPipeline:
             if info.elbow_straight:
                 conf[2] = 0          # J3 không xác định khi tay thẳng -> giữ
             out, held = self.filt[s](raw, conf, frame.t)
+            self.held[s] = held.copy()
             fresh = fresh or not bool(np.all(held[:7]))
             targets[s] = out
         self.fresh = fresh
