@@ -253,9 +253,9 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
         ready_since = None
         auto_engage_used = False
         auto_countdown = None
-        msg = ("GIU READY 3s: tu dong sync | SPACE: dung/chay thu cong | c: calib lai | q: thoat"
+        msg = ("GIU READY 3s: tu dong sync | SPACE: dung/chay thu cong | c: calib lai | g: calib kep | q: thoat"
                if robot_kind == "sim" else
-               "SPACE: engage | c: hieu chuan tay | p: ve nghi | q: thoat")
+               "SPACE: engage | c: hieu chuan tay | g: calib kep | p: ve nghi | q: thoat")
         if real is not None:
             msg = "DRY RUN: motor TAT. Xanh la = robot that. " + msg
         disp = cfg.get("display", {}) or {}
@@ -301,6 +301,12 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                     ready_since = None
                     auto_countdown = None
             targets = pipe.step(fr)
+            for s, res in pipe.grip_calibration_results():
+                if isinstance(res, tuple):
+                    print(f"Kẹp {s}: pinch_ratio {res[0]:.2f}, open_ratio {res[1]:.2f} (đang dùng; muốn giữ cho lần "
+                          f"sau thì ghi vào grip: trong config)")
+                else:
+                    print(f"Kẹp {s}: hiệu chuẩn không được - {res}. Bấm g thử lại.")
             with ctl.lock:
                 gate.set_target(targets, time.monotonic(), fresh=pipe.fresh, t_frame=fr.t, held=pipe.held)
                 cmd = {s: v.copy() for s, v in gate.cmd.items()}
@@ -339,6 +345,14 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                     cv2.putText(cam, "CALIB: ARM DOWN + PALM TO CAM", (max(8, cx - 285), cy + 6),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 180, 255), 2)
                 lines = [f"{fps:4.1f} fps | {status}", msg]
+                for s in pipe.robot_sides:
+                    gm = pipe.grip[s]
+                    rem = gm.calib_remaining(fr.t)
+                    gl = (f"{s} kep: r {gm.r:4.2f} -> {gm.value:4.2f} (chum {gm.pinch:.2f} / xoe {gm.open:.2f})"
+                          if np.isfinite(gm.r) else f"{s} kep: khong thay ngon cai/tro")
+                    if rem is not None:
+                        gl += f" | CALIB KEP {rem:3.1f}s: chum het co roi xoe het co"
+                    lines.append(gl)
                 if multi:
                     lines += fusion_lines(fr, pipe.robot_sides)
                 elif sample.depth_m is not None:
@@ -404,6 +418,10 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                     else:
                         print("Hiệu chuẩn tay trung tính cho:",
                               pipe.calibrate_hand_neutral(fr) or "không thấy bàn tay")
+                elif k == ord("g"):
+                    pipe.start_grip_calibration(fr.t)
+                    print(f"Hiệu chuẩn kẹp {pipe.grip[pipe.robot_sides[0]].calib_s:.0f} s: chụm ngón cái-trỏ hết cỡ "
+                          "rồi xoè hết cỡ, lặp lại vài lần.")
                 elif k == ord("p"):
                     with ctl.lock:
                         gate.disengage()

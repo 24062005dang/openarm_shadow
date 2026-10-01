@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from .filters import EMA, JointFilter
+from .grip import GripMapper
 from .geometry import angle_between, orthonormalize, unit
 from .kinematics import ArmKinematics
 from .perception import ArmObs, Frame
@@ -35,7 +36,9 @@ class ShadowPipeline:
         }
         self.lm_ema = {s: EMA(fc["landmark_ema_alpha"]) for s in self.robot_sides}
         g = cfg["grip"]
-        self.grip_pinch, self.grip_open = g["pinch_ratio"], g["open_ratio"]
+        self.grip = {s: GripMapper(g["pinch_ratio"], g["open_ratio"], g.get("levels"), g.get("level_hysteresis", 0.05),
+                                   g.get("level_dwell_s", 0.15), g.get("calib_s", 4.0))
+                     for s in self.robot_sides}
         self.q_prev = {s: np.zeros(7) for s in self.robot_sides}
         self.last_info = {}
         self.fresh = False       # khung vừa rồi có ít nhất 1 khớp nhận giá trị mới (không phải giữ) -> dead-man
@@ -171,6 +174,20 @@ class ShadowPipeline:
                 done.append(s)
         return done
 
+    def start_grip_calibration(self, t):
+        """Phím g: trong grip.calib_s giây chụm hết cỡ rồi xoè hết cỡ vài lần -> đặt lại pinch/open theo tay người."""
+        for g in self.grip.values():
+            g.start_calibration(t)
+
+    def grip_calibration_results(self):
+        """[(tay, (pinch, open) hoặc chuỗi lỗi)] của các lần hiệu chuẩn kẹp vừa xong (mỗi kết quả trả một lần)."""
+        out = []
+        for s, g in self.grip.items():
+            if g.calib_result is not None:
+                out.append((s, g.calib_result))
+                g.calib_result = None
+        return out
+
     def seed(self, q_meas: dict):
         """Đặt nghiệm tham chiếu = tư thế robot hiện tại (để chọn nghiệm gần nhất)."""
         for s in self.robot_sides:
@@ -195,9 +212,7 @@ class ShadowPipeline:
             q, info = self.rt[s].solve(u, l, H, self.q_prev[s])
             self.q_prev[s] = q
             self.last_info[s] = info
-            grip = np.nan
-            if ob.grip is not None and ok_ha:
-                grip = np.clip((ob.grip - self.grip_pinch) / (self.grip_open - self.grip_pinch), 0, 1)
+            grip = self.grip[s](ob.grip if ok_ha else None, frame.t)
             raw = np.append(q, grip)
             conf = np.array([c_up, c_up, c_fo, c_fo, c_ha, c_ha, c_ha, c_ha])
             if u is None:

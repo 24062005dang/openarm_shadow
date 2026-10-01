@@ -51,7 +51,7 @@ python3 -m venv --system-site-packages .venv   # system-site để thấy python
 source .venv/bin/activate
 pip install -r requirements.txt
 bash scripts/download_models.sh                # model MediaPipe vào models/
-python -m pytest -q                            # 130 test phải đạt
+python -m pytest -q                            # 135 test phải đạt
 python scripts/check_kinematics.py             # in trục khớp, thử ngược retarget
 ```
 
@@ -113,6 +113,10 @@ config/fusion_2cam.yaml` (thứ tự này).
 - Chỉ dùng hướng nên tay người dài hay ngắn không ảnh hưởng. Đổi lại, vị trí kẹp robot không trùng vị trí bàn tay người:
   hợp với động tác biểu diễn, chưa hợp gắp chính xác.
 - Nhiều nghiệm → chọn nghiệm trong giới hạn khớp và gần tư thế trước nhất.
+- Kẹp: r = (đầu ngón cái − đầu ngón trỏ) / chiều dài bàn tay, chụm = đóng (0), xoè = mở hẳn (1), mở liên tục theo
+  hai ngón (`openarm_shadow/grip.py`). Phím **g** khi chạy: chụm hết cỡ rồi xoè hết cỡ trong 4 s để đo theo tay
+  mình (số in ra terminal, ghi vào `grip:` để dùng lần sau). Chỉ muốn vài mức: `grip.levels: [0, 0.5, 1]`.
+  Motor kẹp chỉ chạy khi `robot.gripper.enabled: true` (đo trước góc mở/đóng thật bằng `tools/bringup/read_joints.py`).
 
 Chi tiết và nguồn: `docs/DESIGN.md`, `docs/05_diem_moi_2_bai_bao.md`.
 
