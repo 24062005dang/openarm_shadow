@@ -20,6 +20,9 @@ class ShadowPipeline:
         self.kins = {s: ArmKinematics(s) for s in self.robot_sides}
         rc = cfg["retarget"]
         self.rt = {s: ArmRetargeter(self.kins[s], rc["elbow_straight_deg"]) for s in self.robot_sides}
+        # J3 (xoay cánh tay) càng gần thẳng càng kém xác định (trục J3 trùng trục J5 khi tay thẳng): độ tin cậy J3
+        # tăng dần từ 0 ở elbow_straight_deg tới đủ ở elbow_j3_full_deg.
+        self.j3_bend = (float(rc["elbow_straight_deg"]), float(rc.get("elbow_j3_full_deg", 30.0)))
         for s in self.robot_sides:            # hướng trung tính mặc định theo đúng bàn tay người điều khiển tay này
             Hn = default_hand_neutral(self.human_side_for(s))
             self.rt[s].set_hand_neutral(Hn if self.mode == "direct" else mirror_rotation(Hn))
@@ -205,6 +208,9 @@ class ShadowPipeline:
                 conf[4:7] = 0
             if info.elbow_straight:
                 conf[2] = 0          # J3 không xác định khi tay thẳng -> giữ
+            elif np.isfinite(info.elbow_bend_deg):
+                a, b = self.j3_bend
+                conf[2] *= float(np.clip((info.elbow_bend_deg - a) / max(b - a, 1e-6), 0.0, 1.0))
             out, held = self.filt[s](raw, conf, frame.t)
             self.held[s] = held.copy()
             self.conf[s] = conf.copy()

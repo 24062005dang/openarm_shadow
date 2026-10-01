@@ -200,6 +200,15 @@ bị che, làm khuỷu nhảy ra trước/sau thân -> J1 và J3 đổi 90-110°
 - `--record` giờ ghi thêm độ tin cậy từng khớp và số camera / sai số / depth của vai-khuỷu-cổ tay;
   `python scripts/find_jumps.py run.npz` liệt kê từng lần nhảy kèm chẩn đoán.
 
+### Sau lần chạy robot thật đầu (cổ tay khóa)
+
+Nhận diện tốt (vai/khuỷu/cổ tay 2 camera 99%, sai số 3-7 px; motor bám lệnh 80-120 ms, sai 1-3°). Còn 3 kiểu nhảy:
+- J3 trôi tới giới hạn khi tay gần thẳng (trục J3 trùng trục J5 nên xoay cánh tay không quan sát được), gập khuỷu
+  lại thì phải quay 147°. `retarget.elbow_j3_full_deg` (30): độ tin cậy J3 tăng dần từ 12° tới 30° gập khuỷu.
+- J1 nhảy 71° khi khuỷu sai số 18 px. `fusion.body_err_conf_px` [10, 30]: điểm sai số lớn bị hạ độ tin cậy.
+- J5 lật -87 -> 87° khi hướng tay chỉ 1 nguồn (DEGRADED 0.7). `filter.jump_confirm_conf` cổ tay 0.8: bước nhảy
+  lớn cổ tay chỉ nhận khi >= 2 nguồn đồng ý.
+
 ### Cổ tay tự xoay nhanh khi tay để ngang
 
 Bàn tay để ngang mà mép tay/đầu ngón chĩa vào camera thì lòng bàn tay gần như không nhìn thấy: MediaPipe đoán

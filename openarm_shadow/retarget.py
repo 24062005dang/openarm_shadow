@@ -45,6 +45,7 @@ class RetargetInfo:
     err_fore_deg: float = float("nan")
     err_hand_deg: float = float("nan")
     elbow_straight: bool = False
+    elbow_bend_deg: float = float("nan")      # góc gập khuỷu người (0 = thẳng)
     clamped: list = field(default_factory=list)
 
 
@@ -110,6 +111,7 @@ class ArmRetargeter:
         if u is not None:
             q = self.align_axis(3, q, kin.limb_sign[3] * unit(u), q_prev)
         if l is not None and u is not None:
+            info.elbow_bend_deg = float(np.rad2deg(angle_between(u, l)))
             if angle_between(u, l) < self.elbow_straight:
                 # tay gần thẳng: xoay cánh tay (J3) không xác định -> giữ J3, chỉ giải J4
                 info.elbow_straight = True

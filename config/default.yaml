@@ -58,6 +58,9 @@ fusion:
   # khớp tay hay rơi vào thân/nền khi khuỷu bị che -> khuỷu nhảy trước/sau thân -> J1/J3 lật. 0.5: thường dưới
   # filter.min_conf -> khớp giữ thay vì đi theo điểm kém. Bàn tay vẫn dùng 0.8 như cũ.
   body_mono_depth_conf: 0.5
+  # Vai/khuỷu/cổ tay triangulate có sai số chiếu lại lớn: độ tin cậy x (1 - (sai số - a) / (b - a)), tối thiểu 0.3.
+  # Mặc định a=10, b=30 px: 18 px -> x0.6 (dưới min_conf, khớp giữ). Bình thường 2-8 px không bị ảnh hưởng.
+  body_err_conf_px: [10, 30]
   depth_consistency_m: 0.04  # depth lệch nghiệm 2D hơn mức này thì không dùng
   min_visibility: 0.3        # điểm Pose có visibility thấp hơn thì bỏ ở camera đó
   depth: {patch_radius: 3, hand_patch_radius: 2, min_depth_m: 0.3, max_depth_m: 6.0, max_local_delta_m: 0.15}
@@ -114,6 +117,9 @@ mapping:
 
 retarget:
   elbow_straight_deg: 12   # tay gần thẳng hơn mức này thì giữ J3 (xoay cánh tay không xác định)
+  # Từ 12° tới elbow_j3_full_deg: độ tin cậy J3 tăng dần 0 -> 1. Tay hơi gập (< ~25°) J3 vẫn giữ; bước nhảy J3
+  # lớn chỉ nhận khi khuỷu gập rõ (lần chạy thật đầu: J3 trôi tới 87° lúc tay gần thẳng rồi phải quay 147°).
+  elbow_j3_full_deg: 30
 
 filter:
   landmark_ema_alpha: 0.8      # EMA trên điểm mốc (Hand Shadowing dùng 0.8)
@@ -128,7 +134,9 @@ filter:
   jump_hold_s: 0.2
   # Bước nhảy chỉ nhận khi giá trị mới ổn định suốt jump_hold_s VÀ độ tin cậy >= jump_confirm_conf mỗi khung.
   # Điểm triangulate tốt (2 camera khớp) ~0.8-0.95; 1 camera + depth / 2 camera mâu thuẫn thấp hơn -> không nhận.
-  jump_confirm_conf: [0.7, 0.7, 0.7, 0.7, 0.6, 0.6, 0.6, 0]   # cổ tay: OrientationFusion đã chặn lật riêng
+  # Cổ tay 0.8: bước nhảy lớn J5-J7 chỉ nhận khi hướng tay TRACKING (>= 2 nguồn đồng ý, 0.9); DEGRADED (1 nguồn,
+  # 0.7) vẫn điều khiển cử động nhỏ nhưng không làm cổ tay lật ±87° (lần chạy thật đầu: J5 -87 -> 87).
+  jump_confirm_conf: [0.7, 0.7, 0.7, 0.7, 0.8, 0.8, 0.8, 0]
   min_conf: 0.6
 
 grip:
