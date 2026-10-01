@@ -534,6 +534,7 @@ class MultiViewPerception:
                     cam.set_realsense_intrinsics(s.intrinsics)
                 check_image_size(cam, s.bgr)
         per_view = [Perception(cfg["models"]["pose"], cfg["models"]["hand"], min_conf=cfg["models"]["min_conf"],
+                               delegate=cfg["models"].get("delegate", "cpu"),
                                orientation_cfg=cfg.get("orientation"), **opts)
                     for opts in view_options(cfg)]
         return cls(per_view, cams, fc)

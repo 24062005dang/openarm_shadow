@@ -76,6 +76,7 @@ models:
   pose: models/pose_landmarker_full.task
   hand: models/hand_landmarker.task
   min_conf: 0.5
+  delegate: cpu              # cpu | gpu | auto. Đo trước bằng scripts/bench_mediapipe.py (GPU Intel chưa chắc nhanh hơn)
   pose_interval: 1           # Pose chạy 1/N khung (Hand vẫn mỗi khung); 2 = nhẹ gần một nửa phần Pose
   pose_hold_frames: 0        # Pose hụt tối đa chừng này lần chạy vẫn giữ kết quả cũ (không mất tay khi Pose chớp)
 

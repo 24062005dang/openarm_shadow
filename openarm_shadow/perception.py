@@ -375,13 +375,15 @@ def body_frame(W, vis, min_hip_vis=0.5):
 class Perception:
     def __init__(self, pose_model, hand_model, num_hands=2, min_conf=0.5, depth_cfg=None,
                  orientation_cfg=None, pose_enabled=True, pose_interval=1, pose_hold_frames=0,
-                 force_hand_side=None, parallel=True):
+                 force_hand_side=None, parallel=True, delegate="cpu"):
         """pose_enabled=False: chỉ chạy Hand (camera phụ trong fusion) -> nhẹ gần một nửa.
         pose_interval=N: Pose chạy 1/N khung, các khung khác dùng lại kết quả Pose gần nhất (Hand vẫn mỗi khung).
         pose_hold_frames: Pose hụt tối đa chừng này lần chạy thì vẫn giữ kết quả cũ (không mất tay vì Pose chớp).
         force_hand_side: chỉ điều khiển 1 tay -> bàn tay duy nhất thấy được luôn là tay này (không bị bỏ vì cổ tay
         Pose lệch hay nhãn handedness sai). Ý tưởng từ bản Openarm_Teleop của nhóm.
-        parallel: chạy Hand và Pose song song (2 luồng) thay vì nối tiếp."""
+        parallel: chạy Hand và Pose song song (2 luồng) thay vì nối tiếp.
+        delegate: "cpu" (XNNPACK), "gpu" (OpenGL ES qua EGL; trên Linux chạy cả GPU Intel/Mesa nếu driver hỗ trợ) hoặc
+        "auto" (thử GPU, lỗi thì CPU). GPU không khởi tạo được -> tự quay về CPU và in cảnh báo."""
         from pathlib import Path
         self.pose_enabled = bool(pose_enabled)
         self.pose_interval, self.pose_hold = max(1, int(pose_interval)), int(pose_hold_frames)
@@ -398,14 +400,32 @@ class Perception:
 
         self.mp = mp
         RM = vision.RunningMode.VIDEO
-        self.pose = vision.PoseLandmarker.create_from_options(vision.PoseLandmarkerOptions(
-            base_options=mpt.BaseOptions(model_asset_path=str(pose_model)), running_mode=RM,
-            num_poses=1, min_pose_detection_confidence=min_conf,
-            min_pose_presence_confidence=min_conf, min_tracking_confidence=min_conf)) if self.pose_enabled else None
-        self.hands = vision.HandLandmarker.create_from_options(vision.HandLandmarkerOptions(
-            base_options=mpt.BaseOptions(model_asset_path=str(hand_model)), running_mode=RM,
-            num_hands=num_hands, min_hand_detection_confidence=min_conf,
-            min_hand_presence_confidence=min_conf, min_tracking_confidence=min_conf))
+        self.delegate = {}
+
+        def create(name, landmarker, options_cls, model, **kw):
+            want = str(delegate).lower()
+            tries = ["gpu", "cpu"] if want in ("gpu", "auto") else ["cpu"]
+            last = None
+            for d in tries:
+                try:
+                    dlg = mpt.BaseOptions.Delegate.GPU if d == "gpu" else mpt.BaseOptions.Delegate.CPU
+                    obj = landmarker.create_from_options(options_cls(
+                        base_options=mpt.BaseOptions(model_asset_path=str(model), delegate=dlg), running_mode=RM, **kw))
+                    self.delegate[name] = d
+                    if d == "cpu" and want == "gpu":
+                        print(f"Cảnh báo: {name} không chạy được trên GPU ({last}), dùng CPU.")
+                    return obj
+                except Exception as e:             # GPU không có / driver thiếu OpenGL ES 3.1 -> thử CPU
+                    last = f"{type(e).__name__}: {e}"
+            raise RuntimeError(f"Không tạo được {name}: {last}")
+
+        self.pose = create("pose", vision.PoseLandmarker, vision.PoseLandmarkerOptions, pose_model,
+                           num_poses=1, min_pose_detection_confidence=min_conf,
+                           min_pose_presence_confidence=min_conf,
+                           min_tracking_confidence=min_conf) if self.pose_enabled else None
+        self.hands = create("hand", vision.HandLandmarker, vision.HandLandmarkerOptions, hand_model,
+                            num_hands=num_hands, min_hand_detection_confidence=min_conf,
+                            min_hand_presence_confidence=min_conf, min_tracking_confidence=min_conf)
         self._last_ts = -1
         # Camera có Pose: Hand chạy ở luồng riêng trong lúc Pose chạy (MediaPipe nhả GIL): ~60 -> ~43 ms/khung
         self._hand_pool = None

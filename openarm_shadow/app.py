@@ -200,6 +200,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
     else:
         cap = open_source(source, cfg)
         perc = Perception(cfg["models"]["pose"], cfg["models"]["hand"], min_conf=cfg["models"]["min_conf"],
+                          delegate=cfg["models"].get("delegate", "cpu"),
                           depth_cfg=cfg["camera"].get("realsense"), orientation_cfg=cfg.get("orientation"))
     robot = real = ctl = gate = worker = trace = None
     log = {"t": []}
