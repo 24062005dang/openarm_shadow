@@ -22,7 +22,7 @@ from .robot import make_robot
 from .safety import SafetyGate
 from .multiview import MultiCameraSource, MultiViewPerception
 from .sources import open_source
-from .viz import draw_human, draw_robot, put_lines, side_by_side
+from .viz import compose_view, draw_human, draw_robot, put_lines
 
 
 class Controller(threading.Thread):
@@ -246,6 +246,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                "SPACE: engage | c: hieu chuan tay | p: ve nghi | q: thoat")
         if real is not None:
             msg = "DRY RUN: motor TAT. Xanh la = robot that. " + msg
+        disp = cfg.get("display", {}) or {}
         if show:
             cv2.namedWindow("openarm_shadow", cv2.WINDOW_NORMAL)   # kéo giãn được cửa sổ
         if multi:
@@ -359,9 +360,13 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                 elif robot_kind == "openarm":
                     q_real = robot.read()
                 put_lines(cam, lines)
-                rob = draw_robot(pipe.kins, cmd, q_target=targets, q_meas=q_real,
-                                 title="lenh (dam) / muc tieu (mo)" + (" / do that (xanh la)" if q_real else ""))
-                cv2.imshow("openarm_shadow", side_by_side(cam, rob))
+                title = "lenh (dam) / muc tieu (mo)" + (" / do that (xanh la)" if q_real else "")
+                view = compose_view(cam, lambda size, zoom: draw_robot(pipe.kins, cmd, size=size, q_target=targets,
+                                                                       q_meas=q_real, title=title,
+                                                                       zoom_to_arms=zoom),
+                                    layout=disp.get("robot_layout", "auto"),
+                                    robot_height=disp.get("robot_height", 480))
+                cv2.imshow("openarm_shadow", view)
                 k = cv2.waitKey(1) & 0xFF
                 if k == ord(" "):
                     auto_engage_used = True

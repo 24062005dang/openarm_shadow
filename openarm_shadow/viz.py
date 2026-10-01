@@ -51,21 +51,34 @@ def draw_human(img, frame):
 
 
 def draw_robot(kins, q: dict, size=(480, 480), q_target: dict | None = None, title="",
-               q_meas: dict | None = None):
+               q_meas: dict | None = None, zoom_to_arms=False):
     """Hai hình chiếu: trái = nhìn từ phía trước robot (ngang = y), phải = nhìn từ bên phải (ngang = x).
 
-    q: lệnh (nét đậm màu) · q_target: mục tiêu (nét mảnh xám) · q_meas: góc đo từ robot thật (nét xanh lá)."""
+    q: lệnh (nét đậm màu) · q_target: mục tiêu (nét mảnh xám) · q_meas: góc đo từ robot thật (nét xanh lá).
+    zoom_to_arms: phóng to, căn giữa quanh vai các tay đang vẽ (chỉ chừa tầm với ~0.6 m) thay vì cả thân robot."""
     W, H = size
     canvas = np.full((H, W, 3), 245, np.uint8)
     half = W // 2
     # Tầm với mỗi tay ~0.55 m quanh vai (vai ở y = ±0.15, z = 0.7): mỗi hình chiếu phải chứa y trong ±0.75 m,
     # z trong 0.1..1.3 m, để tay dang ngang hoặc giơ lên đầu không bị cắt.
     scale = min(half / 1.5, H / 1.4)
+    cen = [0.0, 0.0]                             # tâm ngang của hình chiếu trước (y) / bên phải (x)
+    z0, zc = 0.7, 0.45                           # độ cao vai (m) đặt ở zc * H
+    if zoom_to_arms and kins:
+        reach = 0.6
+        sh = np.array([k.display_keypoints(np.zeros(7))["shoulder"] for k in kins.values()])
+        spans = []
+        for view, ax in ((0, 1), (1, 0)):
+            lo, hi = sh[:, ax].min() - reach, sh[:, ax].max() + reach
+            cen[view] = 0.5 * (lo + hi)
+            spans.append(hi - lo)
+        z0, zc = float(sh[:, 2].mean()), 0.5
+        scale = min(half / max(spans), H / (2 * reach))
 
     def proj(p, view):
         horiz = p[1] if view == 0 else p[0]     # nhìn từ phía trước robot: tay phải robot ở bên trái ảnh
         cx = half // 2 + view * half
-        return int(cx + horiz * scale), int(H * 0.45 + (0.7 - p[2]) * scale)
+        return int(cx + (horiz - cen[view]) * scale), int(H * zc + (z0 - p[2]) * scale)
 
     def draw_frame(origin, R, view, label, length=0.075):
         colors = ((0, 0, 255), (0, 180, 0), (255, 0, 0))  # x đỏ, y xanh lá, z xanh dương
@@ -115,3 +128,18 @@ def side_by_side(cam, robot):
     h = cam.shape[0]
     r = cv2.resize(robot, (int(robot.shape[1] * h / robot.shape[0]), h))
     return np.hstack([cam, r])
+
+
+def compose_view(cam, render_robot, layout="auto", robot_height=480):
+    """Ghép ảnh camera với hình robot mô phỏng. render_robot(size, zoom) -> ảnh robot cỡ size=(W, H)
+    (zoom: phóng to quanh vai, xem draw_robot).
+
+    layout "right": robot bên phải camera, cao bằng camera (cũ). "below": robot nằm dưới, rộng bằng cả dải camera,
+    cao robot_height -> hình robot to hơn nhiều khi có 2 camera (dải camera rộng và thấp). "auto": dải camera rộng
+    hơn 2 lần chiều cao (nhiều camera) thì "below", còn lại "right"."""
+    h, w = cam.shape[:2]
+    if layout == "auto":
+        layout = "below" if w > 2 * h else "right"
+    if layout == "below":
+        return np.vstack([cam, render_robot((w, int(robot_height)), True)])
+    return side_by_side(cam, render_robot((480, 480), False))

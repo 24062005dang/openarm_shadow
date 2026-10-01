@@ -28,6 +28,13 @@ camera:
     palm_plane_max_rms_m: 0.012
     palm_axis_length_m: 0.08  # chiều dài trục debug vẽ trên ảnh
 
+display:
+  # Hình robot mô phỏng: auto = nhiều camera (dải ảnh rộng) thì đặt DƯỚI ảnh camera, rộng bằng cả dải (to, dễ nhìn);
+  # 1 camera thì đặt bên phải như cũ. Ép: below | right. Màn hình thấp (768 px) mà cửa sổ bị tràn: hạ robot_height
+  # (vd 360) hoặc kéo nhỏ cửa sổ.
+  robot_layout: auto
+  robot_height: 480
+
 orientation:
   reacquire_frames: 1        # nhận lại ngay; continuity quaternion vẫn chặn flip
   hold_frames: 6             # giữ hướng cũ ngắn hạn khi plane/landmark lỗi
