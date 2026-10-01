@@ -131,6 +131,7 @@ robot:
   control_hz: 100
   gain_ramp_s: 1.0
   feedback_timeout_s: 0.1
+  poll_feedback_timeout_s: 0.5   # --dry-run: chỉ đọc góc mỗi khung camera (chậm hơn vòng điều khiển 100 Hz)
   # Lọc số đọc rác (phản hồi 0x55 của Damiao bị đọc như gói trạng thái, xem openarm_can_robot.py)
   read_filter:
     max_abs_rad: 3.7          # |q| lớn hơn -> rác

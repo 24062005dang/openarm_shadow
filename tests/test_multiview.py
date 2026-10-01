@@ -344,3 +344,12 @@ def test_frozen_second_camera_is_marked_stale(monkeypatch):
     blank = types.SimpleNamespace(bgr=np.zeros((480, 640, 3), np.uint8), depth_m=None, intrinsics=None)
     fr = mvp.process(MultiSample([blank, blank], 0.0, 0.0, [False, True]))
     assert calls == ["front"] and fr.fusion["stale"] == ["side45"]
+
+
+def test_stall_message_names_the_stalled_camera():
+    from openarm_shadow.multiview import MultiCameraSource
+    src = MultiCameraSource.__new__(MultiCameraSource)
+    src.names = ["front", "side45"]
+    src.stats = [{"frames": 90, "fails": 0, "error": None}, {"frames": 0, "fails": 3, "error": "timeout"}]
+    assert src.describe_stall(3, "side45").startswith("Camera 'side45'")
+    assert src.describe_stall(3).startswith("Camera 'front'")

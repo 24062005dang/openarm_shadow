@@ -69,7 +69,7 @@ engage chậm 3 s.
 Sau khi đã xác minh zero và chiều J5–J7 bằng dry-run, dùng `config/d455_wrist_real.yaml` cho lượt thử xoay tay phải.
 Profile này mở toàn bộ dải cơ khí chính thức của tay phải; ba khớp cổ tay vẫn được giới hạn ở 15°/s trong lượt xác minh.
 Không dùng profile này nếu hình que xanh lá trong dry-run quay ngược robot thật ở bất kỳ khớp J5–J7 nào.
-Offset phần mềm đo ở tư thế nghỉ/khởi động: tay phải J5 +4,8°, J6 −4,5°, J7 +4,1°; không ghi lại zero motor.
+Offset phần mềm tay phải (01/10, `read_joints.py` ở tư thế nghỉ): J4 −3,0° (khuỷu rơ, đọc −1…−8°), J5–J7 = 0 (đọc trong ±2°; số 29/09 +4,8/−4,5/+4,1 không còn đúng). Không ghi lại zero motor. Đo lại mỗi buổi.
 
 ## 5. Những gì CHƯA có
 - Bù trọng lực tắt mặc định. Không bù, với kp = 70 tay giơ ngang có thể võng khoảng 8° (ước tính từ mô men

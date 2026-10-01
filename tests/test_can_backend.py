@@ -169,6 +169,25 @@ def test_poll_reads_without_enabling(robot):
     assert r.poll()["right"][0] == pytest.approx(0.6)   # ...đọc giống nhau 3 lần thì chấp nhận
 
 
+def test_poll_tolerates_slow_camera_loop_but_not_silent_joint(robot, monkeypatch):
+    """--dry-run hỏi góc mỗi khung camera (80-150 ms): J1 trả lời trễ 0,2 s không phải mất phản hồi; im 1 s thì là."""
+    from openarm_shadow.robot.openarm_can_robot import RobotFault
+    r, hw = robot
+    r.connect()
+    j1 = hw.a.ms[0]
+    real_refresh = type(hw).refresh_all
+
+    def refresh_without_j1(self, delay):
+        real_refresh(self)
+        j1.t = time.monotonic() - delay      # J1 chưa trả lời lần hỏi này; lần trả lời gần nhất cách đây `delay` s
+
+    monkeypatch.setattr(type(hw), "refresh_all", lambda self: refresh_without_j1(self, 0.2))
+    r.poll()
+    monkeypatch.setattr(type(hw), "refresh_all", lambda self: refresh_without_j1(self, 1.0))
+    with pytest.raises(RobotFault):
+        r.poll()
+
+
 def test_enable_refuses_when_zero_is_wrong(robot):
     """Tay thả xuôi nhưng đọc J1 = 178° (zero motor sai, như tay trái ngày 28/09): không được bật motor."""
     from openarm_shadow.robot.openarm_can_robot import RobotFault
@@ -182,21 +201,23 @@ def test_enable_refuses_when_zero_is_wrong(robot):
 
 
 def test_software_offset_shifts_motor_limits(monkeypatch):
-    """J4 thẳng tay đọc -7.7° (zero lệch): với offset -7.7° thì được bật motor, và lệnh 0° URDF = -7.7° motor."""
+    """J4 thẳng tay đọc đúng offset của first_real.yaml (zero lệch): được bật motor, lệnh 0° URDF = offset motor."""
     oa = make_fake_openarm_can()
     monkeypatch.setitem(sys.modules, "openarm_can", oa)
     from openarm_shadow.robot.openarm_can_robot import OpenArmCANRobot
     cfg = load_config("config/first_real.yaml")
     cfg["robot"]["feedback_timeout_s"] = 1.0
+    off = cfg["robot"]["urdf_to_motor"]["right"]["offset_deg"][3]
+    assert off < 0
     r = OpenArmCANRobot(cfg["robot"], ["right"])
     hw = oa.OpenArm.instances[-1]
-    hw.a.ms[3].q = np.deg2rad(-7.7)
+    hw.a.ms[3].q = np.deg2rad(off)
     q = r.connect()["right"]
     assert not r.out_of_range()
     assert q[3] == pytest.approx(0.0, abs=1e-6)
     r.enable()
     r.send({"right": np.zeros(8)})
-    assert hw.a.ms[3].q == pytest.approx(np.deg2rad(-7.7), abs=np.deg2rad(0.5))
+    assert hw.a.ms[3].q == pytest.approx(np.deg2rad(off), abs=np.deg2rad(0.5))
 
 
 def test_close_disables_motors_even_if_damping_step_fails(robot):

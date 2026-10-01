@@ -375,12 +375,13 @@ def body_frame(W, vis, min_hip_vis=0.5):
 class Perception:
     def __init__(self, pose_model, hand_model, num_hands=2, min_conf=0.5, depth_cfg=None,
                  orientation_cfg=None, pose_enabled=True, pose_interval=1, pose_hold_frames=0,
-                 force_hand_side=None):
+                 force_hand_side=None, parallel=True):
         """pose_enabled=False: chỉ chạy Hand (camera phụ trong fusion) -> nhẹ gần một nửa.
         pose_interval=N: Pose chạy 1/N khung, các khung khác dùng lại kết quả Pose gần nhất (Hand vẫn mỗi khung).
         pose_hold_frames: Pose hụt tối đa chừng này lần chạy thì vẫn giữ kết quả cũ (không mất tay vì Pose chớp).
         force_hand_side: chỉ điều khiển 1 tay -> bàn tay duy nhất thấy được luôn là tay này (không bị bỏ vì cổ tay
-        Pose lệch hay nhãn handedness sai). Ý tưởng từ bản Openarm_Teleop của nhóm."""
+        Pose lệch hay nhãn handedness sai). Ý tưởng từ bản Openarm_Teleop của nhóm.
+        parallel: chạy Hand và Pose song song (2 luồng) thay vì nối tiếp."""
         from pathlib import Path
         self.pose_enabled = bool(pose_enabled)
         self.pose_interval, self.pose_hold = max(1, int(pose_interval)), int(pose_hold_frames)
@@ -406,6 +407,11 @@ class Perception:
             num_hands=num_hands, min_hand_detection_confidence=min_conf,
             min_hand_presence_confidence=min_conf, min_tracking_confidence=min_conf))
         self._last_ts = -1
+        # Camera có Pose: Hand chạy ở luồng riêng trong lúc Pose chạy (MediaPipe nhả GIL): ~60 -> ~43 ms/khung
+        self._hand_pool = None
+        if self.pose_enabled and parallel:
+            from concurrent.futures import ThreadPoolExecutor
+            self._hand_pool = ThreadPoolExecutor(1, thread_name_prefix="hand")
         self.depth_cfg = depth_cfg or {}
         self.orientation_cfg = orientation_cfg or {}
         self._hand_depth_model = {"right": None, "left": None}
@@ -417,6 +423,8 @@ class Perception:
         self._body_R = None
 
     def close(self):
+        if getattr(self, "_hand_pool", None) is not None:
+            self._hand_pool.shutdown(wait=True)
         if self.pose is not None:
             self.pose.close()
         self.hands.close()
@@ -505,12 +513,20 @@ class Perception:
         t = time.monotonic() if t is None else t
         ts = max(int(t * 1000), self._last_ts + 1)
         self._last_ts = ts
-        rgb = np.ascontiguousarray(bgr[:, :, ::-1])
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)     # nhanh hơn bgr[:, :, ::-1] + copy (~8 -> ~1 ms ở 720p)
         img = self.mp.Image(image_format=self.mp.ImageFormat.SRGB, data=rgb)
-        hres = self.hands.detect_for_video(img, ts)
         if not self.pose_enabled:
-            return self._hand_only(hres, t)
-        pose = self._run_pose(img, ts)
+            return self._hand_only(self.hands.detect_for_video(img, ts), t)
+        pool = getattr(self, "_hand_pool", None)
+        if pool is not None:
+            fut = pool.submit(self.hands.detect_for_video, img, ts)
+            try:
+                pose = self._run_pose(img, ts)
+            finally:
+                hres = fut.result()          # luôn chờ Hand xong: không để 2 lần detect chồng nhau trên cùng model
+        else:
+            hres = self.hands.detect_for_video(img, ts)
+            pose = self._run_pose(img, ts)
         h, w = bgr.shape[:2]
 
         arms = {"right": ArmObs(), "left": ArmObs()}

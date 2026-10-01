@@ -21,10 +21,10 @@ safety:
 
 robot:
   park_vel_deg_s: 15
-  # Đo lại tại tư thế nghỉ/khởi động cơ khí ngày 29/09: motor đọc
-  # J5=+4.8°, J6=-4.5°, J7=+4.1°. Chỉ bù trong phần mềm, không ghi zero motor.
+  # 01/10 tư thế nghỉ motor đọc J5≈-2..+0.5°, J6≈-1.5°, J7≈-1° (29/09 đọc +4.8/-4.5/+4.1, nay không còn đúng:
+  # zero motor có vẻ đã hiệu chuẩn lại) -> J5-J7 để 0. Chỉ bù trong phần mềm, không ghi zero motor.
   urdf_to_motor:
     right:
       sign: [1, 1, 1, 1, 1, 1, 1]
-      # J4 -7.7: đo 30/09 khi tay thả thẳng (xem config/first_real.yaml). Đo lại mỗi buổi.
-      offset_deg: [0, 0, 0, -7.7, 4.8, -4.5, 4.1]
+      # J4 -3.0: xem config/first_real.yaml. Đo lại mỗi buổi.
+      offset_deg: [0, 0, 0, -3.0, 0, 0, 0]

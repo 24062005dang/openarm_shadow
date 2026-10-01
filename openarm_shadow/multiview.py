@@ -407,11 +407,13 @@ class MultiCameraSource:
                     cands = list(self.buf[i])
                     best = min(cands, key=lambda ts: abs(ts[0] - t_ref)) if cands else None
                     newer = best is not None and best[0] >= t_ref - self.tol
-                    left = wait_until - time.monotonic()
-                    if newer or left <= 0:
+                    # Chưa có khung nào (vd RealSense đang khởi động): chờ tới hết timeout, không theo pair_wait
+                    left = (wait_until if cands else deadline) - time.monotonic()
+                    if newer or left <= 0 or not self.running:
                         break
                     self.cond.wait(left)
                 if best is None:
+                    self.error = self.describe_stall(timeout, self.names[i])
                     return False, None
                 views.append(best[1])
                 lag = abs(best[0] - t_ref)
@@ -420,13 +422,13 @@ class MultiCameraSource:
                     skew = max(skew, lag)
         return True, MultiSample(views, t_ref, skew, stale)
 
-    def describe_stall(self, timeout):
-        """Câu báo lỗi khi camera tham chiếu không gửi khung mới: số khung/lỗi của từng camera."""
+    def describe_stall(self, timeout, name=None):
+        """Câu báo lỗi khi một camera (mặc định camera tham chiếu) không gửi khung mới: số khung/lỗi từng camera."""
         parts = []
-        for name, st in zip(self.names, self.stats):
-            parts.append(f"  {name}: {st['frames']} khung, {st['fails']} lần đọc lỗi"
+        for cam_name, st in zip(self.names, self.stats):
+            parts.append(f"  {cam_name}: {st['frames']} khung, {st['fails']} lần đọc lỗi"
                          + (f", lỗi cuối: {st['error']}" if st["error"] else ""))
-        return (f"Camera '{self.names[0]}' không gửi khung mới trong {timeout:.0f} s.\n" + "\n".join(parts) +
+        return (f"Camera '{name or self.names[0]}' không gửi khung mới trong {timeout:.0f} s.\n" + "\n".join(parts) +
                 "\nKiểm tra: camera có bị app khác chiếm không, cáp/cổng USB, chỉ số webcam (list_cameras.py).")
 
     def close(self):
@@ -819,12 +821,14 @@ class MultiViewPerception:
         self.last_world = W
         return fr
 
-    def draw(self, msample, fused: Frame, height=360):
-        """Ảnh từng camera (khung xương MediaPipe) + điểm hợp nhất chiếu lại (tím) để thấy hai camera có khớp."""
+    def draw(self, msample, fused: Frame, height=360, view_frames=None, world=None):
+        """Ảnh từng camera (khung xương MediaPipe) + điểm hợp nhất chiếu lại (tím) để thấy hai camera có khớp.
+        view_frames/world: kết quả của đúng khung msample (khi process() đang chạy khung sau ở luồng khác)."""
         from .viz import draw_human, put_lines
         tiles = []
-        W = getattr(self, "last_world", None)
-        for v, (s, f) in enumerate(zip(msample.views, self.view_frames)):
+        W = getattr(self, "last_world", None) if world is None else world
+        view_frames = self.view_frames if view_frames is None else view_frames
+        for v, (s, f) in enumerate(zip(msample.views, view_frames)):
             img = draw_human(s.bgr.copy(), f if v else fused)
             if W is not None:
                 ids = [i for i in (L_SH, R_SH, L_EL, R_EL, L_WR, R_WR) if np.all(np.isfinite(W[i]))]

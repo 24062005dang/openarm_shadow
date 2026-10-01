@@ -126,6 +126,51 @@ def park(robot, gate, rest, vel_deg_s, timeout=25.0):
         gate.disengage()
 
 
+class PerceptionWorker(threading.Thread):
+    """Đọc camera + MediaPipe ở luồng riêng: luồng chính vẽ/điều khiển khung N trong lúc khung N+1 đang được nhận
+    diện (trước đây làm nối tiếp nên vẽ chặn nhận diện). Luôn giữ kết quả MỚI NHẤT; luồng chính chậm thì bỏ khung cũ."""
+
+    def __init__(self, cap, process):
+        super().__init__(daemon=True, name="perception")
+        self.cap, self.process = cap, process
+        self.cond = threading.Condition()
+        self.latest, self.seq, self.taken = None, 0, 0
+        self.running, self.done, self.error = True, False, None
+
+    def run(self):
+        try:
+            while self.running:
+                ok, sample = self.cap.read()
+                if not ok:
+                    self.error = getattr(self.cap, "error", None) or "Nguồn video hết khung hoặc mất kết nối."
+                    break
+                item = (sample, *self.process(sample))
+                with self.cond:
+                    self.latest, self.seq = item, self.seq + 1
+                    self.cond.notify_all()
+        except BaseException as e:           # lỗi nhận diện: báo cho luồng chính, không chết im lặng
+            self.error = f"{type(e).__name__}: {e}"
+        finally:
+            with self.cond:
+                self.done = True
+                self.cond.notify_all()
+
+    def get(self, timeout=10.0):
+        """Kết quả mới (sample, frame, extra) chưa lấy; None nếu luồng đã dừng (xem .error) hoặc quá timeout."""
+        with self.cond:
+            if not self.cond.wait_for(lambda: self.seq > self.taken or self.done, timeout):
+                self.error = f"không có khung mới trong {timeout:.0f} s"
+                return None
+            if self.seq <= self.taken:
+                return None
+            self.taken = self.seq
+            return self.latest
+
+    def stop(self):
+        self.running = False
+        self.join(timeout=5.0)               # cap.read() có thể chờ tới 3 s
+
+
 def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
     """dry_run (chỉ với robot_kind="openarm"): đọc góc robot thật, KHÔNG bật motor. Lệnh đi vào robot mô phỏng;
     hình vẽ có thêm nét xanh lá = tư thế đo từ robot thật. Dùng để kiểm tra can0/can1 và chiều từng khớp
@@ -134,7 +179,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
     if multi:
         # Nhiều camera (fusion.cameras): mỗi camera MediaPipe riêng, hợp nhất bằng triangulation (multiview.py).
         cap = MultiCameraSource(cfg)
-        ok, first = cap.read()
+        ok, first = cap.read(timeout=10.0)     # RealSense vừa mở có lúc cần > 3 s mới ra khung đầu
         if not ok:
             cap.close()
             raise SystemExit("Không đọc được khung từ đủ các camera trong fusion.cameras.\n" + (cap.error or ""))
@@ -147,7 +192,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
         cap = open_source(source, cfg)
         perc = Perception(cfg["models"]["pose"], cfg["models"]["hand"], min_conf=cfg["models"]["min_conf"],
                           depth_cfg=cfg["camera"].get("realsense"), orientation_cfg=cfg.get("orientation"))
-    robot = real = ctl = gate = None
+    robot = real = ctl = gate = worker = None
     log = {"t": []}
     # Mọi thứ sau khi mở camera nằm trong try: lỗi ở bất kỳ bước nào (kể cả ngay sau khi bật motor) vẫn
     # về tư thế nghỉ và tắt motor, đóng camera.
@@ -191,18 +236,22 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
             msg = "DRY RUN: motor TAT. Xanh la = robot that. " + msg
         if show:
             cv2.namedWindow("openarm_shadow", cv2.WINDOW_NORMAL)   # kéo giãn được cửa sổ
-        while ctl.running:
-            ok, sample = cap.read()
-            if not ok:
-                print("DỪNG: mất khung camera.", getattr(cap, "error", None) or
-                      "Nguồn video hết khung hoặc mất kết nối.")
-                break
-            if multi:
-                frame_bgr = None
+        if multi:
+            def process(sample):
                 fr = perc.process(sample)
-            else:
-                frame_bgr = sample.bgr
-                fr = perc.process(frame_bgr, depth_m=sample.depth_m, depth_intrinsics=sample.intrinsics)
+                return fr, (list(perc.view_frames), perc.last_world)
+        else:
+            def process(sample):
+                return perc.process(sample.bgr, depth_m=sample.depth_m, depth_intrinsics=sample.intrinsics), None
+        worker = PerceptionWorker(cap, process)
+        worker.start()
+        while ctl.running:
+            item = worker.get()
+            if item is None:
+                print("DỪNG: mất khung camera.", worker.error)
+                break
+            sample, fr, extra = item
+            frame_bgr = None if multi else sample.bgr
             with ctl.lock:
                 engaged = gate.engaged
             auto_done = [] if engaged else pipe.auto_calibrate_hand_neutral(fr)
@@ -241,7 +290,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
             fps_t = now
             if show:
                 if multi:
-                    cam = perc.draw(sample, fr)
+                    cam = perc.draw(sample, fr, view_frames=extra[0], world=extra[1])
                 else:
                     cam = draw_human(frame_bgr.copy(), fr)
                     if cfg["camera"]["mirror_display"]:
@@ -350,6 +399,8 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                 park(robot, gate, np.deg2rad(np.asarray(cfg["robot"]["rest_pose_deg"], float)),
                      cfg["robot"]["park_vel_deg_s"])
         finally:
+            if worker is not None:
+                worker.stop()                # dừng nhận diện trước khi đóng model/camera nó đang dùng
             if robot is not None:
                 robot.close()
             if real is not None:

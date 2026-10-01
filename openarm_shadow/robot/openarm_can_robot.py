@@ -49,6 +49,8 @@ class _Arm:
         self.g_open, self.g_closed = np.deg2rad(g["open_deg"]), np.deg2rad(g["closed_deg"])
         self.g_kp, self.g_kd = float(g["kp"]), float(g["kd"])
         self.stale_s = float(rcfg.get("feedback_timeout_s", 0.1))
+        # --dry-run chỉ hỏi góc mỗi khung camera (fusion 2 camera trên CPU: 80-150 ms/khung) -> ngưỡng riêng, rộng hơn
+        self.poll_stale_s = float(rcfg.get("poll_feedback_timeout_s", 0.5))
         rf = rcfg.get("read_filter", {})
         self.max_abs = float(rf.get("max_abs_rad", 3.7))
         self.max_jump = float(rf.get("max_jump_rad", 0.35))
@@ -118,10 +120,11 @@ class _Arm:
         if np.isfinite(g) and abs(g) <= self.max_abs:
             self.g_motor = g
 
-    def check_fresh(self, tolerate_bad=False):
+    def check_fresh(self, tolerate_bad=False, stale_s=None):
         comp = self.arm.get_arm()
+        stale_s = self.stale_s if stale_s is None else stale_s
         if hasattr(comp, "get_link_stats"):
-            stale = [i + 1 for i in range(7) if comp.get_link_stats(i).seconds_since_response() > self.stale_s]
+            stale = [i + 1 for i in range(7) if comp.get_link_stats(i).seconds_since_response() > stale_s]
             if stale:
                 raise RobotFault(f"{self.side}: mất phản hồi khớp {stale}")
         if not np.all(np.isfinite(self.q_motor)):
@@ -213,7 +216,7 @@ class OpenArmCANRobot:
         """Đọc lại góc khi motor đang TẮT (chế độ --dry-run). Không tạo mô-men."""
         for a in self.arms.values():
             a.refresh()
-            a.check_fresh()
+            a.check_fresh(stale_s=a.poll_stale_s)
         return self.read()
 
     def enable(self):
