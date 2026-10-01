@@ -189,6 +189,17 @@ ban tay 2cam 21/21 diem, nhin ro 0.99, TRACKING, khop long tay 3mm | nguon: 3d+r
   đứng yên tới khi hướng ổn định (< 20°) 4 khung có ≥ 2 nguồn (1 nguồn: 8 khung) · `LOST` mất hẳn.
   `nguon:` các nguồn được dùng (3d, rgb:<camera>, depth:<camera>).
 
+### J1/J3 nhảy lớn (khuỷu nhảy trước/sau thân) ở chế độ triangulate
+
+Khi chỉ 1 camera thấy khuỷu, điểm khuỷu lấy từ ảnh + depth của D435i. Depth 1 điểm hay rơi vào thân/nền khi khuỷu
+bị che, làm khuỷu nhảy ra trước/sau thân -> J1 và J3 đổi 90-110° trong 1 khung (đo được ở lần chạy thử đầu).
+- `fusion.body_mono_depth_conf` (0.5): vai/khuỷu/cổ tay chỉ 1 camera + depth bị hạ độ tin cậy dưới
+  `filter.min_conf` -> khớp giữ, không đi theo.
+- `filter.jump_confirm_conf`: bước nhảy > `jump_deg` chỉ nhận khi giá trị mới ổn định suốt `jump_hold_s` và độ
+  tin cậy đủ cao mỗi khung (J1-J4 0.7). Nhảy qua lại giữa hai nghiệm không bao giờ được nhận.
+- `--record` giờ ghi thêm độ tin cậy từng khớp và số camera / sai số / depth của vai-khuỷu-cổ tay;
+  `python scripts/find_jumps.py run.npz` liệt kê từng lần nhảy kèm chẩn đoán.
+
 ### Cổ tay tự xoay nhanh khi tay để ngang
 
 Bàn tay để ngang mà mép tay/đầu ngón chĩa vào camera thì lòng bàn tay gần như không nhìn thấy: MediaPipe đoán

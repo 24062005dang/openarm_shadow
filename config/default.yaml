@@ -54,6 +54,10 @@ fusion:
   max_skew_s: 0.04           # khung phụ lệch hơn mức này: không ghép lần này (camera đó coi như không có khung)
   reproj_thresh_px: 25       # px quy đổi ảnh 640x480; lớn hơn -> bỏ camera tệ nhất / nhờ depth phân xử
   depth_weight: 0.3          # trọng số depth RealSense so với 2D
+  # Vai/khuỷu/cổ tay chỉ 1 camera thấy + depth của nó (triangulate): độ tin cậy x hệ số này. Depth 1 điểm trên
+  # khớp tay hay rơi vào thân/nền khi khuỷu bị che -> khuỷu nhảy trước/sau thân -> J1/J3 lật. 0.5: thường dưới
+  # filter.min_conf -> khớp giữ thay vì đi theo điểm kém. Bàn tay vẫn dùng 0.8 như cũ.
+  body_mono_depth_conf: 0.5
   depth_consistency_m: 0.04  # depth lệch nghiệm 2D hơn mức này thì không dùng
   min_visibility: 0.3        # điểm Pose có visibility thấp hơn thì bỏ ở camera đó
   depth: {patch_radius: 3, hand_patch_radius: 2, min_depth_m: 0.3, max_depth_m: 6.0, max_local_delta_m: 0.15}
@@ -122,6 +126,9 @@ filter:
   deadband_deg: [1.5, 1.5, 2.5, 1.5, 3, 3, 3, 0]   # phần tử kẹp tính theo đơn vị 0..1 (0 = tắt)
   jump_deg: 35                 # khớp: độ; phần tử kẹp dùng đơn vị 0..1 (35 = không bao giờ chặn)
   jump_hold_s: 0.2
+  # Bước nhảy chỉ nhận khi giá trị mới ổn định suốt jump_hold_s VÀ độ tin cậy >= jump_confirm_conf mỗi khung.
+  # Điểm triangulate tốt (2 camera khớp) ~0.8-0.95; 1 camera + depth / 2 camera mâu thuẫn thấp hơn -> không nhận.
+  jump_confirm_conf: [0.7, 0.7, 0.7, 0.7, 0.6, 0.6, 0.6, 0]   # cổ tay: OrientationFusion đã chặn lật riêng
   min_conf: 0.6
 
 grip:

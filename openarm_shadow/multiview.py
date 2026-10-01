@@ -188,7 +188,7 @@ def reprojection_px(cam, X, xy):
     return float(np.hypot(Xc[0] / Xc[2] - xy[0], Xc[1] / Xc[2] - xy[1]) * REF_FX)
 
 
-def fuse_point(obs, depth, reproj_px=25.0, depth_weight=0.3, depth_tol_m=0.04):
+def fuse_point(obs, depth, reproj_px=25.0, depth_weight=0.3, depth_tol_m=0.04, mono_depth_conf=0.8):
     """Hợp nhất 1 điểm từ nhiều camera. Trả (X, conf, info).
 
     1. >= 2 camera: triangulate 2D; nếu sai số chiếu lại vượt ngưỡng thì bỏ camera tệ nhất (còn >= 2 camera),
@@ -197,7 +197,7 @@ def fuse_point(obs, depth, reproj_px=25.0, depth_weight=0.3, depth_tol_m=0.04):
        - GẦN camera hơn nghiệm 2D = vật che phía trước (ngón che ngón) -> bỏ depth, giữ nguyên độ tin cậy;
        - XA hơn = mâu thuẫn (lỗi dọc đường epipolar mà 2 camera không tự thấy, hoặc depth rơi vào nền)
          -> info["conflict"] = True, độ tin cậy x0.5.
-    3. 1 camera: chỉ dùng được nếu camera đó có depth.
+    3. 1 camera: chỉ dùng được nếu camera đó có depth; độ tin cậy x mono_depth_conf.
 
     obs: [(cam, xy, conf)] hoặc [(cam, xy, conf, trust)]. conf (độ tin cậy MediaPipe) quyết định độ tin cậy trả về;
     trust (trọng số camera, kích thước bàn tay, góc nhìn) chỉ dùng để trộn các camera khi triangulate.
@@ -262,7 +262,7 @@ def fuse_point(obs, depth, reproj_px=25.0, depth_weight=0.3, depth_tol_m=0.04):
     if len(obs) == 1 and dep.get(id(obs[0][0])) is not None:
         d = dep[id(obs[0][0])]
         info["depth"] = 1
-        return d[0], 0.8 * min(conf_of[id(obs[0][0])], d[1]), info
+        return d[0], mono_depth_conf * min(conf_of[id(obs[0][0])], d[1]), info
     return None, 0.0, info
 
 
@@ -490,6 +490,7 @@ class MultiViewPerception:
         fc = fusion_cfg or {}
         self.per_view, self.cams = per_view, cameras
         self.reproj_px = float(fc.get("reproj_thresh_px", 25.0))
+        self.body_mono_conf = float(fc.get("body_mono_depth_conf", 0.5))
         self.depth_w = float(fc.get("depth_weight", 0.3))
         self.depth_tol = float(fc.get("depth_consistency_m", 0.04))
         self.min_vis = float(fc.get("min_visibility", 0.3))
@@ -601,7 +602,7 @@ class MultiViewPerception:
                    for v, o in enumerate(views_obs) if i in o["pose"]]
             dep = [(self.cams[v], o["pose"][i][2], o["pose"][i][1]) for v, o in enumerate(views_obs)
                    if i in o["pose"] and o["pose"][i][2] is not None]
-            X, c, pi = fuse_point(obs, dep, self.reproj_px, self.depth_w, self.depth_tol)
+            X, c, pi = fuse_point(obs, dep, self.reproj_px, self.depth_w, self.depth_tol, self.body_mono_conf)
             info["points"][i] = pi
             if X is not None:
                 W[i], vis[i] = X, c

@@ -16,7 +16,7 @@ import time
 import cv2
 import numpy as np
 
-from .perception import Perception
+from .perception import ARM_IDX, Perception
 from .pipeline import ShadowPipeline
 from .robot import make_robot
 from .safety import SafetyGate
@@ -180,6 +180,18 @@ class PerceptionWorker(threading.Thread):
         self.join(timeout=5.0)               # cap.read() có thể chờ tới 3 s
 
 
+def fusion_row(fr, human_side):
+    """Chẩn đoán hợp nhất vai/khuỷu/cổ tay cho --record: [số camera x3, sai số chiếu lại px x3, depth x3] (NaN nếu
+    không có, vd chế độ front hoặc 1 camera)."""
+    pts = (getattr(fr, "fusion", None) or {}).get("points", {})
+    row = np.full(9, np.nan)
+    for k, i in enumerate(ARM_IDX[human_side]):
+        p = pts.get(i)
+        if p:
+            row[k], row[3 + k], row[6 + k] = p.get("views", np.nan), p.get("err_px", np.nan), p.get("depth", np.nan)
+    return row
+
+
 def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
     """dry_run (chỉ với robot_kind="openarm"): đọc góc robot thật, KHÔNG bật motor. Lệnh đi vào robot mô phỏng;
     hình vẽ có thêm nét xanh lá = tư thế đo từ robot thật. Dùng để kiểm tra can0/can1 và chiều từng khớp
@@ -235,7 +247,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
         ctl.trace = trace
         ctl.start()
         rest = np.deg2rad(np.asarray(cfg["robot"]["rest_pose_deg"], float))
-        log = {"t": [], **{f"target_{s}": [] for s in pipe.robot_sides}, **{f"cmd_{s}": [] for s in pipe.robot_sides}}
+        log = {"t": [], **{f"{k}_{s}": [] for k in ("target", "cmd", "conf", "fus") for s in pipe.robot_sides}}
         fps_t, fps = time.monotonic(), 0.0
         auto_engage_s = float(cfg.get("calibration", {}).get("hand_auto", {}).get("auto_engage_sim_s", 3.0))
         ready_since = None
@@ -298,6 +310,8 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                 for s in pipe.robot_sides:
                     log[f"target_{s}"].append(targets[s])
                     log[f"cmd_{s}"].append(cmd[s])
+                    log[f"conf_{s}"].append(pipe.conf[s])
+                    log[f"fus_{s}"].append(fusion_row(fr, pipe.human_side_for(s)))
             now = time.monotonic()
             fps = 0.9 * fps + 0.1 / max(now - fps_t, 1e-3)
             fps_t = now

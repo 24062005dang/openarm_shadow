@@ -51,7 +51,7 @@ python3 -m venv --system-site-packages .venv   # system-site để thấy python
 source .venv/bin/activate
 pip install -r requirements.txt
 bash scripts/download_models.sh                # model MediaPipe vào models/
-python -m pytest -q                            # 120 test phải đạt
+python -m pytest -q                            # 127 test phải đạt
 python scripts/check_kinematics.py             # in trục khớp, thử ngược retarget
 ```
 
@@ -130,6 +130,7 @@ scripts/extract_kinematics.py sinh lại data JSON từ URDF
 scripts/list_cameras.py      liệt kê RealSense (serial, USB) và webcam
 scripts/webcam_check.py      độ nét, fps, định dạng và control của webcam
 scripts/measure_lag.py       đo độ trễ mục tiêu -> lệnh -> góc đo từ file --record
+scripts/find_jumps.py        liệt kê các lần mục tiêu khớp nhảy lớn trong file --record, kèm số camera / sai số / depth
 scripts/bench_mediapipe.py   so tốc độ MediaPipe CPU và GPU trên máy này (models.delegate)
 scripts/make_charuco_board.py in bảng ChArUco A4
 scripts/calibrate_cameras.py hiệu chuẩn ngoại tham số nhiều camera -> config/cameras_calib.yaml

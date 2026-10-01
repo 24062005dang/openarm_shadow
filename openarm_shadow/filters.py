@@ -44,9 +44,13 @@ class JointFilter:
     """Lọc một vector góc (rad). Cấu hình theo từng phần tử."""
 
     def __init__(self, n, min_cutoff, beta, deadband_deg, jump_deg=35.0, jump_hold_s=0.2,
-                 min_conf=0.6, angular=None):
+                 min_conf=0.6, angular=None, jump_confirm_conf=0.0):
         """angular[i] = False: phần tử i không phải góc (vd độ mở kẹp 0..1): deadband/jump dùng nguyên đơn vị,
-        không đổi độ -> rad. Kẹp chỉ bỏ bước nhảy khi jump_deg của nó <= 1 (mặc định 35 -> tắt)."""
+        không đổi độ -> rad. Kẹp chỉ bỏ bước nhảy khi jump_deg của nó <= 1 (mặc định 35 -> tắt).
+
+        Bước nhảy > jump_deg chỉ được nhận khi trong suốt jump_hold_s: giá trị mới ỔN ĐỊNH (lệch nhau < jump_deg/2,
+        không phải nhiễu nhảy qua lại) và độ tin cậy >= jump_confirm_conf (không nhận bước nhảy từ điểm hợp nhất
+        kém, vd chỉ 1 camera + depth). Không thoả: đếm lại từ đầu, khớp vẫn giữ."""
         as_list = lambda v: list(v) if np.ndim(v) else [v] * n
         self.n = n
         ang = np.ones(n, bool) if angular is None else np.asarray(angular, bool)
@@ -54,6 +58,7 @@ class JointFilter:
         self.dead = np.where(ang, np.deg2rad(as_list(deadband_deg)), np.asarray(as_list(deadband_deg), float))
         self.jump = np.where(ang, np.deg2rad(as_list(jump_deg)), np.asarray(as_list(jump_deg), float))
         self.jump_hold_s = jump_hold_s
+        self.jump_conf = np.asarray(as_list(jump_confirm_conf), float)
         self.min_conf = min_conf
         self.reset()
 
@@ -63,6 +68,7 @@ class JointFilter:
         self.out = [None] * self.n
         self.raw = [None] * self.n      # (giá trị thô cuối, thời điểm)
         self.jump_since = [None] * self.n
+        self.jump_val = [None] * self.n       # giá trị lúc bắt đầu bước nhảy đang chờ xác nhận
         self.held = np.ones(self.n, bool)
 
     def __call__(self, x, conf, t):
@@ -74,9 +80,10 @@ class JointFilter:
                 self.jump_since[i] = None
                 continue
             if self.raw[i] is not None and abs(xi - self.raw[i]) > self.jump[i]:
-                if self.jump_since[i] is None:
-                    self.jump_since[i] = t
-                if t - self.jump_since[i] < self.jump_hold_s:
+                if (self.jump_since[i] is None or conf[i] < self.jump_conf[i]
+                        or abs(xi - self.jump_val[i]) > 0.5 * self.jump[i]):
+                    self.jump_since[i], self.jump_val[i] = t, xi     # (bắt đầu) đếm lại
+                if t - self.jump_since[i] < self.jump_hold_s or conf[i] < self.jump_conf[i]:
                     self.held[i] = True
                     continue          # chờ xem bước nhảy có lặp lại không
                 self.f[i].reset()     # nhảy thật (lặp lại đủ lâu): bắt đầu lại bộ lọc

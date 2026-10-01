@@ -26,7 +26,8 @@ class ShadowPipeline:
         fc = cfg["filter"]
         self.filt = {
             s: JointFilter(8, fc["min_cutoff"], fc["beta"], fc["deadband_deg"], fc["jump_deg"],
-                           fc["jump_hold_s"], fc["min_conf"], angular=[True] * 7 + [False])
+                           fc["jump_hold_s"], fc["min_conf"], angular=[True] * 7 + [False],
+                           jump_confirm_conf=fc.get("jump_confirm_conf", 0.0))
             for s in self.robot_sides
         }
         self.lm_ema = {s: EMA(fc["landmark_ema_alpha"]) for s in self.robot_sides}
@@ -36,6 +37,7 @@ class ShadowPipeline:
         self.last_info = {}
         self.fresh = False       # khung vừa rồi có ít nhất 1 khớp nhận giá trị mới (không phải giữ) -> dead-man
         self.held = {s: np.ones(8, bool) for s in self.robot_sides}   # cờ giữ của bộ lọc từng khớp (SafetyGate)
+        self.conf = {s: np.zeros(8) for s in self.robot_sides}       # độ tin cậy từng khớp khung vừa rồi (ghi --record)
         cc = cfg.get("calibration", {}).get("hand_auto", {})
         self.auto_calib_enabled = bool(cc.get("enabled", True))
         self.auto_calib_hold_s = float(cc.get("hold_s", 0.6))
@@ -205,6 +207,7 @@ class ShadowPipeline:
                 conf[2] = 0          # J3 không xác định khi tay thẳng -> giữ
             out, held = self.filt[s](raw, conf, frame.t)
             self.held[s] = held.copy()
+            self.conf[s] = conf.copy()
             fresh = fresh or not bool(np.all(held[:7]))
             targets[s] = out
         self.fresh = fresh
