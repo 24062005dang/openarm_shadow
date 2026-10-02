@@ -72,7 +72,9 @@ def uncalibrated_free_wrists(pipe, gate):
 def fusion_lines(fr, sides):
     """Dòng chẩn đoán fusion: số camera thấy vai/khuỷu/cổ tay, sai số chiếu lại, xung đột depth, bàn tay."""
     fi = fr.fusion or {}
+    people = fi.get("people")
     out = [f"fusion {fi.get('views', 0)} cam | lech khung {fi.get('skew_ms', 0.0):.0f} ms"
+           + (" | nguoi thay: " + "/".join(str(n) for n in people) + " (khoa 1 nguoi)" if people else "")
            + (f" | MAT KHUNG: {', '.join(fi['stale'])}" if fi.get("stale") else "")]
     names = {"right": (12, 14, 16), "left": (11, 13, 15)}
     for s in sides:
@@ -213,7 +215,10 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
         cap = open_source(source, cfg)
         perc = Perception(cfg["models"]["pose"], cfg["models"]["hand"], min_conf=cfg["models"]["min_conf"],
                           delegate=cfg["models"].get("delegate", "cpu"),
-                          depth_cfg=cfg["camera"].get("realsense"), orientation_cfg=cfg.get("orientation"))
+                          depth_cfg=cfg["camera"].get("realsense"), orientation_cfg=cfg.get("orientation"),
+                          max_people=cfg["models"].get("pose_max_people", 2),
+                          lock_dist=cfg["models"].get("pose_lock_dist", 1.0),
+                          lock_keep_frames=cfg["models"].get("pose_lock_keep_frames", 15))
     robot = real = ctl = gate = worker = trace = None
     log = {"t": []}
     # Mọi thứ sau khi mở camera nằm trong try: lỗi ở bất kỳ bước nào (kể cả ngay sau khi bật motor) vẫn
@@ -374,6 +379,10 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                     if inf is not None:
                         lines.append(f"{s}: err u {inf.err_upper_deg:5.1f} l {inf.err_fore_deg:5.1f} "
                                      f"tay {inf.err_hand_deg:5.1f} deg" + (" [thang]" if inf.elbow_straight else ""))
+                    if s in targets:
+                        at, ac = np.rad2deg(targets[s][:4]), np.rad2deg(cmd[s][:4])
+                        lines.append(f"{s} J1-4 target " + " ".join(f"{v:5.1f}" for v in at) + " | cmd " +
+                                     " ".join(f"{v:5.1f}" for v in ac))
                     if s in targets and np.all(np.isfinite(targets[s][4:7])):
                         wt = np.rad2deg(targets[s][4:7])
                         wc = np.rad2deg(cmd[s][4:7])

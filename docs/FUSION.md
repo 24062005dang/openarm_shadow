@@ -209,6 +209,14 @@ Nhận diện tốt (vai/khuỷu/cổ tay 2 camera 99%, sai số 3-7 px; motor b
 - J5 lật -87 -> 87° khi hướng tay chỉ 1 nguồn (DEGRADED 0.7). `filter.jump_confirm_conf` cổ tay 0.8: bước nhảy
   lớn cổ tay chỉ nhận khi >= 2 nguồn đồng ý.
 
+### Có người khác trong khung (khoá người điều khiển)
+
+MediaPipe Pose tìm tối đa `models.pose_max_people` (2) người mỗi camera. Lần đầu chọn người to nhất, gần giữa ảnh,
+thấy đủ đầu-khuỷu-hông; sau đó chỉ theo người có vai gần vị trí cũ (`pose_lock_dist` x độ rộng vai), người điều khiển
+khuất tới `pose_lock_keep_frames` lần vẫn giữ khoá. Màn hình: `nguoi thay: 1/2 (khoa 1 nguoi)`.
+Pose dò người bắt đầu từ khuôn mặt: camera phải thấy cả ĐẦU người điều khiển (đầu bị cắt khỏi khung thì dễ bắt nhầm
+người ngồi phía sau). Dòng `J1-4 target ... | cmd ...` cho biết mục tiêu sai (nhận diện) hay lệnh chậm (giới hạn tốc độ).
+
 ### Cổ tay tự xoay nhanh khi tay để ngang
 
 Bàn tay để ngang mà mép tay/đầu ngón chĩa vào camera thì lòng bàn tay gần như không nhìn thấy: MediaPipe đoán

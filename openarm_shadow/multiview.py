@@ -477,7 +477,9 @@ def view_options(cfg):
         # Camera có Pose tìm 2 bàn tay để gán theo cổ tay (không nhận nhầm tay kia); camera chỉ Hand tìm 1.
         out.append({"pose_enabled": pose, "pose_interval": int(mc.get("pose_interval", 1)),
                     "pose_hold_frames": int(mc.get("pose_hold_frames", 0)), "force_hand_side": force,
-                    "num_hands": 1 if (force and not pose) else 2})
+                    "num_hands": 1 if (force and not pose) else 2,
+                    "max_people": int(mc.get("pose_max_people", 2)), "lock_dist": float(mc.get("pose_lock_dist", 1.0)),
+                    "lock_keep_frames": int(mc.get("pose_lock_keep_frames", 15))})
         if not pose and force is None:
             print(f"Cảnh báo: camera '{c.get('name', i)}' chỉ chạy Hand nhưng đang điều khiển 2 tay -> không biết bàn "
                   "tay nào là tay nào, bàn tay ở camera này bị bỏ. Dùng --arms right (hoặc left).")
@@ -845,6 +847,8 @@ class MultiViewPerception:
         fr, W = self.fuse(views_obs, msample.t)
         fr.pose_2d, fr.hands_2d = frames[0].pose_2d, frames[0].hands_2d
         fr.fusion["skew_ms"] = 1000.0 * msample.skew_s
+        fr.fusion["people"] = [p.n_people for p in self.per_view
+                               if getattr(p, "pose", None) is not None and hasattr(p, "n_people")]
         fr.fusion["stale"] = [self.cams[v].name for v, st in enumerate(stale) if st]
         self.last_world = W
         return fr

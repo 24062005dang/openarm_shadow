@@ -96,6 +96,12 @@ models:
   delegate: cpu              # cpu | gpu | auto. Đo trước bằng scripts/bench_mediapipe.py (GPU Intel chưa chắc nhanh hơn)
   pose_interval: 1           # Pose chạy 1/N khung (Hand vẫn mỗi khung); 2 = nhẹ gần một nửa phần Pose
   pose_hold_frames: 0        # Pose hụt tối đa chừng này lần chạy vẫn giữ kết quả cũ (không mất tay khi Pose chớp)
+  # Khoá người điều khiển: Pose tìm tối đa pose_max_people người, lần đầu chọn người to nhất (gần camera nhất, gần
+  # giữa ảnh), sau đó chỉ theo người có vai gần vị trí cũ (< pose_lock_dist x độ rộng vai). Người khác đi ngang /
+  # ngồi phía sau không cướp được. Mỗi người thêm tốn thêm thời gian Pose khi có người đó trong khung.
+  pose_max_people: 2
+  pose_lock_dist: 1.0
+  pose_lock_keep_frames: 15  # người điều khiển khuất chừng này lần chạy Pose vẫn giữ khoá; quá lâu mới chọn lại
 
 calibration:
   hand_auto:

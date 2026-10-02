@@ -372,10 +372,47 @@ def body_frame(W, vis, min_hip_vis=0.5):
     return make_frame(W[L_SH], W[R_SH], bottom)
 
 
+def _shoulders(pose_2d):
+    """(tâm 2 vai, độ rộng vai) theo toạ độ ảnh chuẩn hoá, hoặc None nếu vai không thấy."""
+    a, b = pose_2d[L_SH], pose_2d[R_SH]
+    if min(a[2], b[2]) < 0.3:
+        return None
+    return 0.5 * (a[:2] + b[:2]), float(np.linalg.norm(a[:2] - b[:2]))
+
+
+def select_operator(cands, prev, lock_dist=1.0):
+    """Chọn người điều khiển trong các người Pose thấy (không nhảy sang người khác trong khung).
+
+    - Đang khoá (prev = pose người điều khiển lần trước): chọn người có tâm 2 vai gần tâm cũ nhất, chỉ nhận nếu cách
+      tâm cũ < lock_dist x độ rộng vai cũ và độ rộng vai không đổi quá 2 lần. Không ai thoả -> None (coi như hụt:
+      giữ ngắn rồi mất người, robot đứng yên) thay vì nhận người khác.
+    - Chưa khoá / vừa mất người: chọn người TO nhất (vai rộng nhất = đứng gần camera nhất), ưu tiên gần giữa ảnh và
+      thấy đủ người (mũi, khuỷu, hông): người ngồi sau bàn / bị cắt nửa người bị ưu tiên thấp hơn.
+    """
+    info = [(_shoulders(c), k) for k, c in enumerate(cands)]
+    info = [(s, k) for s, k in info if s is not None and s[1] > 1e-3]
+    if not info:
+        return None
+    ps = _shoulders(prev) if prev is not None else None
+    if ps is not None and ps[1] > 1e-3:
+        best = min(info, key=lambda x: np.linalg.norm(x[0][0] - ps[0]))
+        (c, w), k = best
+        if np.linalg.norm(c - ps[0]) < lock_dist * ps[1] and 0.5 < w / ps[1] < 2.0:
+            return k
+        return None
+    def score(x):
+        (c, w), k = x
+        center = 1.0 - 0.5 * min(1.0, abs(c[0] - 0.5) * 2)
+        full = float(np.mean(np.clip(cands[k][[NOSE, L_EL, R_EL, L_HIP, R_HIP], 2], 0, 1)))
+        return w * center * (0.3 + 0.7 * full)
+    return max(info, key=score)[1]
+
+
 class Perception:
     def __init__(self, pose_model, hand_model, num_hands=2, min_conf=0.5, depth_cfg=None,
                  orientation_cfg=None, pose_enabled=True, pose_interval=1, pose_hold_frames=0,
-                 force_hand_side=None, parallel=True, delegate="cpu"):
+                 force_hand_side=None, parallel=True, delegate="cpu", max_people=2, lock_dist=1.0,
+                 lock_keep_frames=15):
         """pose_enabled=False: chỉ chạy Hand (camera phụ trong fusion) -> nhẹ gần một nửa.
         pose_interval=N: Pose chạy 1/N khung, các khung khác dùng lại kết quả Pose gần nhất (Hand vẫn mỗi khung).
         pose_hold_frames: Pose hụt tối đa chừng này lần chạy thì vẫn giữ kết quả cũ (không mất tay vì Pose chớp).
@@ -383,12 +420,16 @@ class Perception:
         Pose lệch hay nhãn handedness sai). Ý tưởng từ bản Openarm_Teleop của nhóm.
         parallel: chạy Hand và Pose song song (2 luồng) thay vì nối tiếp.
         delegate: "cpu" (XNNPACK), "gpu" (OpenGL ES qua EGL; trên Linux chạy cả GPU Intel/Mesa nếu driver hỗ trợ) hoặc
-        "auto" (thử GPU, lỗi thì CPU). GPU không khởi tạo được -> tự quay về CPU và in cảnh báo."""
+        "auto" (thử GPU, lỗi thì CPU). GPU không khởi tạo được -> tự quay về CPU và in cảnh báo.
+        max_people / lock_dist: khoá người điều khiển (xem select_operator)."""
         from pathlib import Path
         self.pose_enabled = bool(pose_enabled)
         self.pose_interval, self.pose_hold = max(1, int(pose_interval)), int(pose_hold_frames)
         self.force_hand_side = force_hand_side
         self._pose_count, self._pose_misses, self._last_pose = 0, 0, None
+        self.max_people, self.lock_dist = max(1, int(max_people)), float(lock_dist)
+        self.lock_keep, self._lock = int(lock_keep_frames), None
+        self.n_people = 0              # số người Pose thấy ở lần chạy gần nhất (hiển thị)
         models = (pose_model, hand_model) if self.pose_enabled else (hand_model,)
         missing = [str(m) for m in models if not Path(m).is_file()]
         if missing:
@@ -420,7 +461,7 @@ class Perception:
             raise RuntimeError(f"Không tạo được {name}: {last}")
 
         self.pose = create("pose", vision.PoseLandmarker, vision.PoseLandmarkerOptions, pose_model,
-                           num_poses=1, min_pose_detection_confidence=min_conf,
+                           num_poses=self.max_people, min_pose_detection_confidence=min_conf,
                            min_pose_presence_confidence=min_conf,
                            min_tracking_confidence=min_conf) if self.pose_enabled else None
         self.hands = create("hand", vision.HandLandmarker, vision.HandLandmarkerOptions, hand_model,
@@ -474,12 +515,19 @@ class Perception:
         if self._last_pose is not None and self._pose_count % self.pose_interval != 0:
             return self._last_pose
         pres = self.pose.detect_for_video(img, ts)
-        if pres.pose_landmarks:
-            P = pres.pose_landmarks[0]
-            pose_2d = np.array([[p.x, p.y, p.visibility or 0.0] for p in P])
-            W = np.array([[p.x, p.y, p.z] for p in pres.pose_world_landmarks[0]])
-            self._last_pose, self._pose_misses = (pose_2d, W), 0
+        cands = [np.array([[p.x, p.y, p.visibility or 0.0] for p in P]) for P in (pres.pose_landmarks or [])]
+        self.n_people = len(cands)
+        # Khoá người: nhớ vai người điều khiển tới lock_keep_frames lần Pose liền không thấy họ (đi khuất ngắn, bị
+        # che) để người khác trong khung không cướp quyền; quá lâu mới chọn lại người to nhất.
+        lock = getattr(self, "_lock", None)
+        k = select_operator(cands, lock[0] if lock else None, getattr(self, "lock_dist", 1.0))
+        if k is not None:
+            self._lock = (cands[k], 0)
+            W = np.array([[p.x, p.y, p.z] for p in pres.pose_world_landmarks[k]])
+            self._last_pose, self._pose_misses = (cands[k], W), 0
             return self._last_pose
+        if lock:
+            self._lock = (lock[0], lock[1] + 1) if lock[1] + 1 <= getattr(self, "lock_keep", 15) else None
         self._pose_misses += 1
         if self._last_pose is not None and self._pose_misses <= self.pose_hold:
             # Pose hụt: giữ vị trí cũ để vẫn gán được bàn tay, nhưng hạ độ thấy (x0.5) -> J1-J4 đứng yên thay vì
