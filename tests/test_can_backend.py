@@ -189,7 +189,8 @@ def test_poll_tolerates_slow_camera_loop_but_not_silent_joint(robot, monkeypatch
 
 
 def test_enable_refuses_when_zero_is_wrong(robot):
-    """Tay thả xuôi nhưng đọc J1 = 178° (zero motor sai, như tay trái ngày 28/09): không được bật motor."""
+    """Tay thả xuôi nhưng đọc J1 = 178° mà offset = 0 (zero motor sai, hoặc thiếu offset 180° của tay trái v1.0):
+    không được bật motor."""
     from openarm_shadow.robot.openarm_can_robot import RobotFault
     r, hw = robot
     hw.a.ms[0].q = np.deg2rad(178.2)
@@ -234,3 +235,59 @@ def test_close_disables_motors_even_if_damping_step_fails(robot):
     with pytest.raises(RuntimeError):
         r.close()
     assert not hw.enabled and not r.enabled
+
+
+def left_robot(monkeypatch, j1_motor_deg):
+    """Tay trái v1.0: motor J1/J2 lắp lệch 180° (openarm_driver joint_offsets = pi) -> offset phần mềm 180°."""
+    oa = make_fake_openarm_can()
+    monkeypatch.setitem(sys.modules, "openarm_can", oa)
+    from openarm_shadow.robot.openarm_can_robot import OpenArmCANRobot
+    cfg = load_config()
+    cfg["robot"]["feedback_timeout_s"] = 1.0
+    cfg["robot"]["urdf_to_motor"]["left"]["offset_deg"] = [180, 180, 0, 0, 0, 0, 0]
+    cfg["robot"]["gripper"]["left"] = {"open_deg": -5.3, "closed_deg": 54.7}
+    r = OpenArmCANRobot(cfg["robot"], ["left"])
+    hw = oa.OpenArm.instances[-1]
+    hw.a.ms[0].q, hw.a.ms[1].q = np.deg2rad(j1_motor_deg), np.deg2rad(180.2)
+    return r, hw
+
+
+@pytest.mark.parametrize("j1_motor_deg", [178.1, -181.9])     # cùng một tư thế, số đọc ở hai phía ±180°
+def test_left_arm_180_offset_reads_near_zero_and_never_whips(monkeypatch, j1_motor_deg):
+    r, hw = left_robot(monkeypatch, j1_motor_deg)
+    q = r.connect()["left"]
+    assert np.rad2deg(q[0]) == pytest.approx(-1.9, abs=0.01) and np.rad2deg(q[1]) == pytest.approx(0.2, abs=0.01)
+    assert not r.out_of_range()
+    r.enable()
+    for _ in range(10):
+        r.send({"left": np.append(np.deg2rad([10, 0, 0, 0, 0, 0, 0]), np.nan)})
+    # Lệnh +10° URDF: motor đi +11.9° từ số đọc ban đầu, không quay vòng sang phía kia của ±180°
+    assert np.rad2deg(hw.a.ms[0].q) == pytest.approx(j1_motor_deg + 11.9, abs=0.1)
+    assert np.rad2deg(r.read()["left"][0]) == pytest.approx(10.0, abs=0.1)
+
+
+def test_left_arm_garbage_still_rejected_with_offset(monkeypatch):
+    r, hw = left_robot(monkeypatch, 178.1)
+    r.connect()
+    r.enable()
+    hw.a.ms[0].glitch = [GARBAGE]
+    r.send({"left": np.append(r.read()["left"][:7], np.nan)})
+    assert np.rad2deg(r.arms["left"].q_motor[0]) == pytest.approx(178.1, abs=0.5)
+    assert r.arms["left"].n_rejected >= 1
+
+
+def test_left_arm_far_out_of_range_still_refused(monkeypatch):
+    r, hw = left_robot(monkeypatch, 90.0)                     # URDF -90°: ngoài giới hạn J1 ±75°
+    r.connect()
+    assert r.out_of_range()
+    from openarm_shadow.robot.openarm_can_robot import RobotFault
+    with pytest.raises(RobotFault):
+        r.enable()
+
+
+def test_gripper_config_per_side(monkeypatch):
+    r, _ = left_robot(monkeypatch, 178.1)
+    a = r.arms["left"]
+    assert np.rad2deg(a.grip_to_motor(0.0)) == pytest.approx(54.7) and np.rad2deg(a.grip_to_motor(1.0)) == \
+        pytest.approx(-5.3)
+    assert a.g_kp == 5.0                                      # khoá không ghi đè lấy từ robot.gripper chung

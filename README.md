@@ -37,8 +37,9 @@ lọc số đọc rác.
   `pytest` 110/110 đạt (gồm test lọc số đọc rác của backend CAN, fusion 2 camera và làm sạch bàn tay giả lập).
 - `scripts/demo_sim.py` chạy trọn luồng pipeline → SafetyGate → robot mô phỏng với người giả lập (đã chạy được).
 - Đã chạy với webcam thật trên laptop của nhóm (mô phỏng, 28/09): nhận diện và bám theo tay.
-- Tay phải đã chạy trên OpenArm thật (30/09) với `config/first_real.yaml` (J1–J4, J5–J7 khoá). Tay trái CHƯA:
-  zero sai, phải hiệu chuẩn lại trước. Vẫn làm theo `docs/SAFETY.md` mỗi buổi (dry-run trước).
+- Tay phải đã chạy trên OpenArm thật (30/09: J1–J4; 02/10: J1–J7 + kẹp, 2 camera). Tay trái: không phải zero sai mà
+  J1/J2 lệch 180° (docs/SAFETY.md), offset ở `config/both_arms_real.yaml`, CHƯA chạy thật.
+  Vẫn làm theo `docs/SAFETY.md` mỗi buổi (dry-run trước).
 - Quy ước góc URDF ↔ motor: dấu đồng nhất; offset zero đo trên robot nằm trong `urdf_to_motor` của các config
   chạy thật (J4 tay phải trôi giữa các buổi: **đo lại mỗi buổi**).
 - Fusion 2 camera (webcam + D435i, `--source multi`): chạy được trên máy nhóm; độ chính xác còn phụ thuộc webcam.

@@ -1,0 +1,13 @@
+# Bước 2 tay trái: mở J1-J7 toàn dải như tay phải (wrist_real_30.yaml), cổ tay 30°/s. Đặt NGAY SAU
+# both_arms_real.yaml:
+#   python scripts/shadow.py --source multi --robot openarm \
+#       --config config/wrist_real_30.yaml --config config/gripper_real.yaml \
+#       --config config/both_arms_real.yaml --config config/both_arms_wrist_real.yaml --config config/fusion_3cam.yaml
+# Chỉ dùng khi: đã chạy ổn both_arms_real.yaml (tay trái J1-J4 + kẹp), chiều J5-J7 tay trái đúng (dry-run 02/10: đúng).
+# Offset J5-J7 tay trái đo bằng mắt (cổ tay thẳng, kẹp đối xứng tay phải): nếu cổ tay robot lệch đều một góc so với
+# tay người khi đứng yên, đo lại offset (docs/SAFETY.md).
+
+safety:
+  soft_limits_deg:
+    #        J1          J2          J3          J4          J5          J6          J7
+    left:  [[-75, 75], [-90, 9], [-85, 85], [0, 135], [-85, 85], [-40, 40], [-80, 80]]

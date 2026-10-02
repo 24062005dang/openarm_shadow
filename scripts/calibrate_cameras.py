@@ -4,8 +4,10 @@
     python scripts/make_charuco_board.py -o charuco_a4.png     # in 100%, dán lên tấm phẳng, đo lại cạnh ô
     python scripts/calibrate_cameras.py --config config/fusion_2cam.yaml
 
-Cầm bảng trong vùng tay sẽ cử động, sao cho MỌI camera cùng thấy. Đổi vị trí và góc nghiêng giữa các lần chụp
-(chương trình tự chụp khi bảng đứng yên ở chỗ mới). Đủ số lần chụp thì tự tính và ghi fusion.calib_file.
+Cầm bảng trong vùng tay sẽ cử động, sao cho camera tham chiếu (camera đầu) và ít nhất 1 camera khác cùng thấy (3
+camera: hai camera hai bên không cần thấy cùng lúc). Đổi vị trí và góc nghiêng giữa các lần chụp (chương trình tự
+chụp khi bảng đứng yên ở chỗ mới). Mỗi camera phụ đủ số lần chụp chung với camera tham chiếu thì tự tính và ghi
+fusion.calib_file.
 Phím: c = tính ngay (khi đã >= 8 lần), q/Esc = thoát không lưu.
 Webcam (không phải RealSense) được hiệu chuẩn luôn nội tham số từ chính các ảnh bảng: lúc đầu đưa bảng sát
 webcam, nghiêng nhiều (tới ±45°) và phủ các góc ảnh, chỉ webcam cần thấy. Lần hiệu chuẩn sau tự dùng lại nội tham
@@ -50,6 +52,11 @@ def main():
         old = (yaml.safe_load(calib_path.read_text()) or {}).get("cameras", {})
     src = MultiCameraSource(cfg)
     src.pair_wait = src.tol          # hiệu chuẩn cần khung chụp cùng lúc: luôn chờ khung khớp
+    # Chỉ chụp khi bảng ĐỨNG YÊN (xem `still`), nên khung lệch vài chục ms vẫn dùng được: camera chậm/không đều
+    # (điện thoại qua Wi-Fi ~20 fps) không bị bỏ. Lệch hơn max_lag_s thì bỏ riêng camera đó ở lần chụp này.
+    max_lag_s = 0.1
+    src.stale_s = max(src.stale_s, max_lag_s)
+    prev_ref = None
     cams = [CameraModel(n) for n in names]
     samples, intr_dets, sizes = [], [[] for _ in cams], [None] * len(cams)
     last_t, last_ref = 0.0, None
@@ -72,13 +79,23 @@ def main():
             dets = [detect(det, s.bgr) for s in ms.views]
             counts = [0 if ids is None else len(ids) for ids, _ in dets]
             now = time.monotonic()
-            all_ok = (min(counts) >= args.min_corners and ms.skew_s <= src.tol
-                      and not any(ms.stale or []))            # camera treo: không ghép khung cũ
+            # Camera tham chiếu + ít nhất 1 camera phụ cùng thấy bảng (ngoại tham số tính theo từng cặp với camera 0).
+            # Camera phụ có khung lệch quá max_lag_s / treo thì không tính ở lần này (các camera khác vẫn chụp).
+            lags = ms.lags or [0.0] * len(cams)
+            usable = [v == 0 or (not (ms.stale or [False] * len(cams))[v] and lags[v] <= max_lag_s)
+                      for v in range(len(cams))]
+            seen = tuple(c >= args.min_corners and u for c, u in zip(counts, usable))
             ref_center = None if dets[0][1] is None else dets[0][1].mean(axis=0)
-            moved = last_ref is None or (ref_center is not None and np.linalg.norm(ref_center - last_ref) > 40)
+            # Bảng đứng yên: tâm các góc ở camera tham chiếu xê dịch < 3 px so với khung trước (ở 30 fps ~ < 9 cm/s)
+            still = ref_center is not None and prev_ref is not None and np.linalg.norm(ref_center - prev_ref) < 3.0
+            prev_ref = ref_center
+            all_ok = seen[0] and any(seen[1:]) and still
+            moved = last_ref is None or (ref_center is not None and np.linalg.norm(ref_center - last_ref[0]) > 40) \
+                or seen != last_ref[1]
             if all_ok and moved and now - last_t > 0.8:
-                samples.append(dets)
-                last_t, last_ref = now, ref_center
+                samples.append([d if ok_v else (None, None) for d, ok_v in zip(dets, seen)])
+                last_t, last_ref = now, (ref_center, seen)
+            pair_n = [sum(sm[v][0] is not None for sm in samples) for v in range(len(cams))]
             need_intr = [cams[v].rs_intr is None and cams[v].K is None for v in range(len(cams))]
             for v, (ids, px) in enumerate(dets):
                 if not need_intr[v] or ids is None or len(ids) < 12 or len(intr_dets[v]) >= 3 * args.intr_images:
@@ -94,11 +111,14 @@ def main():
                 if ids is not None:
                     cv2.aruco.drawDetectedCornersCharuco(img, px.reshape(-1, 1, 2).astype(np.float32),
                                                          ids.reshape(-1, 1))
-                put_lines(img, [f"{names[v]}: {counts[v]} goc"], org=(10, img.shape[0] - 14))
+                put_lines(img, [f"{names[v]}: {counts[v]} goc" + ("" if v == 0 else f", lech {1000 * lags[v]:.0f} ms"
+                                + ("" if usable[v] else " (BO)"))], org=(10, img.shape[0] - 14))
                 tiles.append(cv2.resize(img, (int(img.shape[1] * 360 / img.shape[0]), 360)))
             view = np.hstack(tiles)
-            lines = [f"da chup {len(samples)}/{args.samples} | lech khung {1000 * ms.skew_s:.0f} ms",
-                     "cam bang de MOI camera cung thay, doi vi tri/goc nghieng | c: tinh ngay | q: thoat"]
+            lines = ["da chup " + " | ".join(f"{names[v]} {pair_n[v]}/{args.samples}" for v in range(1, len(cams)))
+                     + f" | lech khung {1000 * ms.skew_s:.0f} ms",
+                     f"cam bang de {names[0]} + camera khac cung thay, GIU YEN 1 giay, doi vi tri/goc nghieng"
+                     " | c: tinh ngay | q: thoat"]
             for v in range(len(cams)):
                 if need_intr[v]:
                     lines.append(f"{names[v]} noi tham so: {len(intr_dets[v])}/{args.intr_images} anh "
@@ -109,7 +129,7 @@ def main():
             if k in (ord("q"), 27):
                 raise SystemExit("Huỷ, không lưu.")
             intr_ok = all(not need_intr[v] or len(intr_dets[v]) >= args.intr_images for v in range(len(cams)))
-            if (len(samples) >= args.samples and intr_ok) or (k == ord("c") and len(samples) >= 8):
+            if (min(pair_n[1:]) >= args.samples and intr_ok) or (k == ord("c") and min(pair_n[1:]) >= 8):
                 break
     finally:
         src.close()
@@ -142,7 +162,7 @@ def main():
             raise SystemExit(f"{names[v]}: chỉ {len(ests)} lần chụp dùng được, cần >= 5. Chụp lại.")
         R, t, keep = average_extrinsics(ests)
         cams[v].R, cams[v].t = R, t
-        rms = reprojection_rms_px(board, cams[0], cams[v], [(s[0], s[v]) for s in samples])
+        rms = reprojection_rms_px(board, cams[0], cams[v], [(s[0], s[v]) for s in samples if s[v][0] is not None])
         ang = np.degrees(np.arccos(np.clip(cams[0].R[2] @ R[2], -1, 1)))
         base = np.linalg.norm(cams[v].center - cams[0].center)
         entry = {"R": R.tolist(), "t": t.tolist(), "rms_px": round(rms, 2), "samples_used": int(keep.sum())}

@@ -38,8 +38,14 @@ Cột cuối là kết quả đo tay khi làm bài múa Thái Cực (taichi_play
 nên `sign = 1`, `offset = 0` là đúng cho J1–J4. Vẫn đọc lại một lần trên Ubuntu native, vì thứ tự can0/can1 có thể đổi
 khi cắm lại USB. J5–J7 phải đo trước khi dùng cổ tay: khớp nào ngược thì đặt sign = -1, lệch 0 thì đặt offset.
 
-**Zero motor sai.** Tay thả xuôi mà `read_joints.py` đọc ra góc lớn (vd ngày 28/09 tay trái đọc J1 ≈ 178°,
-J2 ≈ 181°, J5 ≈ −65°, kẹp ≈ 54°) nghĩa là zero của motor sai, không phải lệch vài độ. Khi đó `shadow.py` sẽ báo
+**Tay trái v1.0 đọc J1 ≈ 178°, J2 ≈ 180° là BÌNH THƯỜNG** (sửa nhận định cũ ngày 28/09): motor J1, J2 tay trái lắp
+lệch 180°, J5–J7 và kẹp cũng có offset riêng (`openarm_driver/configs/openarm_v1.yaml`, `joint_offsets` tay trái
+`[π, π, 0, 0, −1,191, 0,115, 0,033, 0,955]` rad). Đọc 02/10: J1 178,1°, J2 180,2° → URDF −1,9°, +0,2°. Các offset này
+nằm trong `config/both_arms_real.yaml`; backend wrap góc ±180° nên số đọc +178° hay −182° đều đúng. J5–J7 tay trái
+chưa kiểm chứng: dry-run trước khi mở cổ tay trái.
+
+**Zero motor sai.** Tay thả xuôi mà `read_joints.py` đọc ra góc lớn KHÔNG giải thích được bằng offset trên (sau khi trừ
+offset vẫn lệch hàng chục độ) nghĩa là zero của motor sai, không phải lệch vài độ. Khi đó `shadow.py` sẽ báo
 "CẢNH BÁO: góc motor nằm ngoài giới hạn" và **từ chối bật motor**. Không chạy bất kỳ chương trình nào bật motor tay đó
 (kể cả taichi_player) cho tới khi hiệu chuẩn lại zero bằng công cụ chính thức và kiểm tra lại sau khi tắt/bật nguồn:
 

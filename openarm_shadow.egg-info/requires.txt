@@ -1,0 +1,6 @@
+mediapipe==0.10.21
+numpy
+pyyaml
+
+[realsense]
+pyrealsense2==2.58.1.10581

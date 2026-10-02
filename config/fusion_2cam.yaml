@@ -1,5 +1,5 @@
 # Fusion 2 camera cho 1 tay (tay phải):
-#   camera 0 = iPhone (DroidCam, chế độ PC Webcam) qua cáp USB, TRỰC DIỆN (khung tham chiếu, không có depth)
+#   camera 0 = webcam laptop (Sonix USB2.0 HD, 1280x720 MJPG 30 fps), TRỰC DIỆN (khung tham chiếu, không có depth)
 #   camera 1 = RealSense D435i, lệch ~45° về phía tay phải (có depth)
 #
 #   python scripts/list_cameras.py                       # xem chỉ số webcam laptop + serial D435i
@@ -14,14 +14,14 @@
 
 fusion:
   cameras:
-    # iPhone trực diện qua USB: app DroidCam (chọn "PC Webcam") để ở màn hình chính, rồi trên PC chạy
-    #   iproxy 4747:4747        (gói libusbmuxd-tools; chuyển cổng 4747 của iPhone qua cáp)
-    # Đặt iPhone nằm ngang trên giá, cao ngang ngực, cách người 1,2-1,5 m, thấy trọn vai-hông-tay, không zoom.
-    # Xê dịch iPhone sau khi hiệu chuẩn -> phải chạy lại calibrate_cameras.py.
+    # Webcam laptop trực diện: đặt laptop cao ngang ngực, cách người 1,2-1,5 m, thấy trọn vai-hông-tay.
+    # Xê dịch laptop / gập màn hình sau khi hiệu chuẩn -> phải chạy lại calibrate_cameras.py.
+    # source 0: cắm D435i sẽ thêm /dev/video*, kiểm tra webcam vẫn là 0 bằng scripts/list_cameras.py.
     # weight: độ tin cậy so với camera khác (mặc định 1).
-    - {name: front, source: "http://127.0.0.1:4747/video", latency_s: 0.05, weight: 1.0, pose: true}
-    # Webcam laptop cũ (mờ, 640x480): {name: front, source: 0, latency_s: 0.0, weight: 0.7, pose: true}
-    # và đặt lại camera.width/height = 640x480.
+    - {name: front, source: 0, latency_s: 0.0, weight: 1.0, pose: true}
+    # iPhone qua USB (DroidCam "PC Webcam" + `iproxy 4747:4747`), dùng thay dòng trên, fourcc: null:
+    #   {name: front, source: "http://127.0.0.1:4747/video", latency_s: 0.05, weight: 1.0, pose: true}
+    #   hiệu chuẩn iPhone cũ (02/10) lưu ở config/cameras_calib_iphone.yaml.
     # D435i lệch 45°, cùng độ cao, cùng khoảng cách. Chỉ có 1 RealSense nên serial để trống cũng được.
     # pose: false -> D435i chỉ chạy Hand (bàn tay + depth), không chạy Pose: nhẹ gần một nửa.
     - {name: side45, source: realsense, serial: "", pose: false}
@@ -33,14 +33,15 @@ fusion:
   pair_wait_s: 0.0           # không chờ camera phụ: lấy khung gần nhất đang có -> vòng lặp không khựng
 
 camera:
-  # Kích thước khung camera front: DroidCam trên iPhone phát 1280x720 (webcam laptop cũ chỉ 640x480).
-  # Phải giống lúc hiệu chuẩn (chương trình kiểm tra). Đổi camera thì sửa lại và chạy lại calibrate_cameras.py.
+  # Kích thước khung camera front, phải giống lúc hiệu chuẩn (chương trình kiểm tra). Đổi camera thì sửa lại và
+  # chạy lại calibrate_cameras.py. Webcam laptop: 1280x720 chỉ được 30 fps ở MJPG (YUYV 720p chỉ 10 fps).
   width: 1280
   height: 720
-  fourcc: null
+  fourcc: MJPG
   fps: 30
   v4l2:                           # cần: sudo apt install v4l-utils. Danh sách control: scripts/webcam_check.py
     power_line_frequency: 1       # 50 Hz (điện VN): hết sọc nhấp nháy dưới đèn huỳnh quang/LED
+    exposure_dynamic_framerate: 0 # không cho webcam tự hạ fps khi phòng tối (giữ 30 fps, ảnh tối hơn chút)
     # sharpness: 3                # 0-6, mặc định 2. Làm nét trong webcam: cao quá thì viền trắng + nhiễu
     # auto_exposure: 1            # 1 = chỉnh tay (3 = tự động); kèm exposure_time_absolute (625-5000,
     # exposure_time_absolute: 625 #   mặc định 2500): nhỏ hơn = ít nhoè khi tay cử động nhưng tối hơn
@@ -53,8 +54,9 @@ camera:
     spatial_filter: false    # tắt bộ lọc spatial (tốn CPU) để D435i giữ gần 30 fps; median quanh điểm đã khử nhiễu
 
 models:
-  # CPU laptop: Pose chỉ chạy trên webcam, 1/2 khung (Hand mỗi khung); Pose hụt <= 6 lần vẫn giữ kết quả cũ.
-  # Vẫn chậm (< 12 fps) thì đổi sang bản lite.
+  # Pose chỉ chạy trên webcam, 1/2 khung (Hand mỗi khung); Pose hụt <= 6 lần vẫn giữ kết quả cũ.
+  # Vẫn chậm (< 12 fps) thì đổi sang bản lite. GPU lỗi -> tự về CPU (in cảnh báo).
+  delegate: gpu
   pose: models/pose_landmarker_full.task
   pose_interval: 2
   pose_hold_frames: 6

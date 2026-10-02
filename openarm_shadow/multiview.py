@@ -21,6 +21,7 @@ import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 
 import cv2
@@ -30,7 +31,7 @@ import yaml
 from .geometry import unit
 from .handfusion import HandShape, OrientationFusion, PalmModel, hand_forearm_angle
 from .perception import (ArmObs, Frame, H_INDEX_MCP, H_INDEX_TIP, H_MIDDLE_MCP, H_PINKY_MCP, H_THUMB_TIP,
-                         H_WRIST, L_EL, L_HIP, L_SH, L_WR, R_EL, R_HIP, R_SH, R_WR, ARM_IDX, body_frame,
+                         H_WRIST, L_EL, L_HIP, L_SH, L_WR, R_EL, R_HIP, R_SH, R_WR, ARM_IDX, _shoulders, body_frame,
                          open_finger_count, palm_frame_from_depth, rotation_distance, sample_depth,
                          slerp_rotation)
 
@@ -129,8 +130,9 @@ def load_calibration(path, names):
     data = yaml.safe_load(p.read_text())
     cams = []
     for n in names:
-        if n not in data.get("cameras", {}):
-            raise SystemExit(f"File {p} không có camera '{n}'. Hiệu chuẩn lại.")
+        if n not in data.get("cameras", {}) or "R" not in data["cameras"][n]:
+            raise SystemExit(f"File {p} chưa có ngoại tham số camera '{n}'. Hiệu chuẩn: "
+                             "python scripts/calibrate_cameras.py --config <config fusion đang dùng>")
         c = data["cameras"][n]
         cm = CameraModel(n, np.asarray(c["R"], float), np.asarray(c["t"], float))
         if c.get("K") is not None:
@@ -328,11 +330,15 @@ class MultiSample:
     t: float                    # thời điểm (s, time.monotonic) của khung camera tham chiếu
     skew_s: float = 0.0         # lệch thời gian lớn nhất giữa các khung được ghép (không tính camera stale)
     stale: list = None          # stale[i] = True: camera i không có khung đủ mới (treo, mất kết nối) -> bỏ qua
+    lags: list = None           # lags[i]: lệch thời gian (s) khung camera i so với khung tham chiếu
 
 
 class MultiCameraSource:
-    """Mỗi camera một luồng đọc; read() lấy khung mới nhất của camera tham chiếu và khung gần thời điểm nhất
-    của mỗi camera còn lại. D455/D435i và webcam không đồng bộ phần cứng được với nhau."""
+    """Mỗi camera một luồng đọc; read() lấy khung của camera tham chiếu (mới nhất, hoặc theo camera chậm nhất với
+    fusion.sync = slowest) và khung gần thời điểm nhất của mỗi camera còn lại. D455/D435i và webcam không đồng bộ
+    phần cứng được với nhau."""
+
+    sync, sync_max_wait = "latest", 0.15       # mặc định (ghi đè trong __init__ theo fusion.sync)
 
     def __init__(self, cfg):
         from .sources import OpenCVSource, RealSenseSource, webcam_options
@@ -347,6 +353,12 @@ class MultiCameraSource:
         self.stale_s = float(fc.get("max_skew_s", fc.get("stale_s", max(1.6 * self.tol, 0.04))))
         # Chờ tối đa bao lâu cho khung khớp của camera phụ; 0 = không chờ, lấy khung gần nhất đang có (không khựng)
         self.pair_wait = float(fc.get("pair_wait_s", self.tol))
+        # sync "latest": khung tham chiếu MỚI NHẤT, camera phụ lấy khung gần nhất đang có (không chờ) -> ít trễ, nhưng
+        # camera đến chậm (iPhone/DroidCam ~54 ms) gần như luôn lệch > max_skew_s -> bị bỏ.
+        # sync "slowest": chọn khung tham chiếu mới nhất mà mọi camera đang chạy đều ĐÃ có khung cùng thời điểm -> mọi
+        # camera cùng góp, đổi lại trễ thêm bằng camera chậm nhất. Camera chậm hơn sync_max_wait_s (treo) thì không chờ.
+        self.sync = str(fc.get("sync", "latest"))
+        self.sync_max_wait = float(fc.get("sync_max_wait_s", 0.15))
         n_rs = sum(str(c.get("source", "realsense")).lower() in REALSENSE_NAMES for c in fc["cameras"])
         self.srcs = []
         try:
@@ -371,7 +383,7 @@ class MultiCameraSource:
             raise
         # Độ trễ cố định của từng camera (s): webcam laptop thường trả khung chậm hơn RealSense vài chục ms.
         self.latency = [float(c.get("latency_s", 0.0)) for c in fc["cameras"]]
-        self.buf = [deque(maxlen=6) for _ in self.srcs]
+        self.buf = [deque(maxlen=12) for _ in self.srcs]     # 12 khung ~0,4 s: đủ chờ camera chậm (sync slowest)
         self.stats = [{"frames": 0, "fails": 0, "error": None} for _ in self.srcs]   # để báo lỗi khi mất camera
         self.error = None
         self.cond = threading.Condition()
@@ -399,18 +411,46 @@ class MultiCameraSource:
                 self.buf[i].append((t, s))
                 self.cond.notify_all()
 
+    def _pick_synced_ref(self):
+        """sync slowest: khung tham chiếu mới nhất (chưa dùng) có thời điểm <= khung mới nhất của camera phụ chậm nhất
+        (+ sync_tol_s). Camera phụ chưa có khung nào thì chờ; tụt sau khung tham chiếu mới nhất hơn sync_max_wait_s
+        (treo/mất) thì không chờ (sẽ bị đánh dấu stale). -> (t, sample) hoặc None (chờ thêm)."""
+        fresh = [e for e in self.buf[0] if e[0] > self.last_ref_t]
+        if not fresh:
+            return None
+        newest = fresh[-1][0]
+        t_ok = np.inf
+        for b in self.buf[1:]:
+            if not b:
+                return None
+            if newest - b[-1][0] <= self.sync_max_wait:
+                t_ok = min(t_ok, b[-1][0] + self.tol)
+        cand = [e for e in fresh if e[0] <= t_ok]
+        if cand:
+            return cand[-1]
+        # Khung tham chiếu cũ nhất chưa dùng đã chờ quá sync_max_wait mà camera phụ vẫn chưa tới: thôi chờ
+        return fresh[-1] if newest - fresh[0][0] > self.sync_max_wait else None
+
     def read(self, timeout=3.0):
         deadline = time.monotonic() + timeout
         with self.cond:
-            while not (self.buf[0] and self.buf[0][-1][0] > self.last_ref_t):
+            while True:
+                if self.sync == "slowest" and len(self.buf) > 1:
+                    picked = self._pick_synced_ref()
+                elif self.buf[0] and self.buf[0][-1][0] > self.last_ref_t:
+                    picked = self.buf[0][-1]
+                else:
+                    picked = None
+                if picked is not None:
+                    break
                 left = deadline - time.monotonic()
                 if left <= 0 or not self.running:
                     self.error = self.describe_stall(timeout)
                     return False, None
                 self.cond.wait(left)
-            t_ref, ref = self.buf[0][-1]
+            t_ref, ref = picked
             self.last_ref_t = t_ref
-            views, skew, stale = [ref], 0.0, [False]
+            views, skew, stale, lags = [ref], 0.0, [False], [0.0]
             for i in range(1, len(self.buf)):
                 wait_until = time.monotonic() + self.pair_wait
                 while True:
@@ -429,10 +469,11 @@ class MultiCameraSource:
                     return False, None
                 views.append(best[1])
                 lag = abs(best[0] - t_ref)
+                lags.append(lag)
                 stale.append(lag > self.stale_s)
                 if lag <= self.stale_s:
                     skew = max(skew, lag)
-        return True, MultiSample(views, t_ref, skew, stale)
+        return True, MultiSample(views, t_ref, skew, stale, lags)
 
     def describe_stall(self, timeout, name=None):
         """Câu báo lỗi khi một camera (mặc định camera tham chiếu) không gửi khung mới: số khung/lỗi từng camera."""
@@ -529,6 +570,11 @@ class MultiViewPerception:
         self._facing = {s: None for s in ("right", "left")}
         self._body_R, self._body_reject = None, 0
         self.view_frames = []
+        # Khoá cùng 1 người ở mọi camera (_match_operator): vai 3D hợp nhất gần nhất + thời điểm
+        self.person_cfg = dict(fc.get("person_match") or {})
+        self._operator_ref = None
+        self._sizes = None
+        self.person_match = {}
         self.pool = ThreadPoolExecutor(len(per_view)) if parallel and len(per_view) > 1 else None
 
     @classmethod
@@ -556,6 +602,88 @@ class MultiViewPerception:
                 p.close()
         if self.pool is not None:
             self.pool.shutdown(wait=False)
+
+    # -- khoá cùng 1 người ở mọi camera ------------------------------------------------------------------
+    def _match_operator(self, v, sample, cands):
+        """Camera phụ v: chọn trong `cands` (pose_2d từng người MediaPipe thấy ở camera v) đúng người điều khiển mà
+        camera tham chiếu đang khoá, để triangulate không ghép vai/khuỷu của hai người khác nhau.
+        -> chỉ số người, -1 (không ai khớp: camera v coi như không thấy ai lần này) hoặc None (chưa có tham chiếu:
+        camera v tự khoá như khi chạy 1 camera).
+
+        1. Có vai 3D hợp nhất gần đây: chiếu vào camera v, chọn người có tâm 2 vai gần điểm dự đoán nhất
+           (< lock_dist x bề rộng vai shoulder_m ở khoảng cách đó). Khoá theo 3D nên người đứng sau / cạnh người điều
+           khiển không lọt vào dù cùng độ cao.
+        2. Chưa có (mới chạy, vừa mất người): ghép với người camera 0 đang khoá - triangulate vai/khuỷu/hông, lấy
+           sai số chiếu lại nhỏ nhất. Hai camera cùng độ cao thì người khác cùng độ cao vẫn triangulate được (điểm nằm
+           trên đường epipolar), nên còn đòi bề rộng vai 3D hợp lý và depth camera v đo được (nếu có) khớp.
+        """
+        pc = self.person_cfg
+        cam = self.cams[v]
+        h, w = sample.bgr.shape[:2]
+        if self._operator_ref is not None:
+            S = self._operator_ref[0][[L_SH, R_SH]]
+            P = cam.project(S)
+            z = float(cam.to_cam(S.mean(0)[None])[0, 2])
+            if np.all(np.isfinite(P)) and z > 0.3:
+                scale = cam.fx * float(pc.get("shoulder_m", 0.35)) / z
+                d = [np.linalg.norm(sh[0] * [w, h] - P.mean(0)) / scale if sh is not None else np.inf
+                     for sh in map(_shoulders, cands)]
+                k = int(np.argmin(d))
+                ok = d[k] < float(pc.get("lock_dist", 1.0))
+                self.person_match[v] = {"mode": "3D", "ok": bool(ok), "err": float(d[k])}
+                return k if ok else -1
+        f0 = self.view_frames[0] if self.view_frames else None
+        if f0 is None or f0.pose_2d is None or self._sizes is None:
+            self.person_match[v] = {"mode": "tu khoa", "ok": True}
+            return None
+        cam0, P0, size0 = self.cams[0], f0.pose_2d, self._sizes[0]
+        dc = self.depth_cfg
+        # Bề rộng vai (m) của người camera 0 khoá, từ điểm world MediaPipe: người khác cùng độ cao triangulate ra bề
+        # rộng sai (giao 2 tia nhìn ở độ sâu khác) -> bị loại kể cả khi chưa có depth.
+        sr, sl = f0.arms["right"].s, f0.arms["left"].s
+        ref_w = float(np.linalg.norm(sr - sl)) if sr is not None and sl is not None else None
+        best = None
+        for k, cand in enumerate(cands):
+            use = [i for i in (L_SH, R_SH, L_EL, R_EL, L_HIP, R_HIP)
+                   if P0[i, 2] >= self.min_vis and cand[i, 2] >= self.min_vis]
+            if L_SH not in use or R_SH not in use or len(use) < 3:
+                continue
+            n0 = cam0.normalize(P0[use, :2] * size0)
+            nv = cam.normalize(cand[use, :2] * [w, h])
+            X, errs = {}, []
+            for j, i in enumerate(use):
+                Xi = triangulate_weighted([(cam0, n0[j], 1.0), (cam, nv[j], 1.0)])
+                if Xi is None or not np.all(np.isfinite(Xi)):
+                    errs.append(np.inf)
+                    continue
+                X[i] = Xi
+                errs.append(max(reprojection_px(cam0, Xi, n0[j]), reprojection_px(cam, Xi, nv[j])))
+            if L_SH not in X or R_SH not in X:
+                continue
+            width = float(np.linalg.norm(X[L_SH] - X[R_SH]))
+            lo, hi = pc.get("shoulder_width_m", (0.2, 0.6))
+            if not lo <= width <= hi or (ref_w and abs(width / ref_w - 1) > float(pc.get("width_tol", 0.35))):
+                continue
+            zc = cam.to_cam(np.array([X[L_SH], X[R_SH]]))[:, 2]
+            z0 = cam0.to_cam(np.array([X[L_SH], X[R_SH]]))[:, 2]
+            if min(zc.min(), z0.min()) < 0.3:
+                continue
+            if sample.depth_m is not None:
+                dz = []
+                for i, zi in zip((L_SH, R_SH), zc):
+                    zm = sample_depth(sample.depth_m, cand[i, 0] * w, cand[i, 1] * h,
+                                      radius=dc.get("patch_radius", 3), min_m=dc.get("min_depth_m", 0.3),
+                                      max_m=dc.get("max_depth_m", 6.0), max_delta_m=dc.get("max_local_delta_m", 0.15))
+                    if zm is not None:
+                        dz.append(abs(zm - zi))
+                if dz and min(dz) > float(pc.get("depth_tol_m", 0.25)):
+                    continue
+            err = float(np.median(errs))
+            if best is None or err < best[0]:
+                best = (err, k)
+        ok = best is not None and best[0] <= float(pc.get("max_err_px", 30.0))
+        self.person_match[v] = {"mode": "cam0", "ok": bool(ok), "err": best[0] if best else float("nan")}
+        return best[1] if ok else -1
 
     # -- quan sát 2D + depth của từng camera ------------------------------------------------------------
     def _view_obs(self, v, sample, fr):
@@ -786,9 +914,21 @@ class MultiViewPerception:
         ob.hand_open_fingers = max([open_finger_count(pts)] +
                                    [self.view_frames[v].arms[side].hand_open_fingers for v in seen
                                     if v < len(self.view_frames)])
-        if np.all(np.isfinite(pts[[H_WRIST, H_MIDDLE_MCP, H_THUMB_TIP, H_INDEX_TIP]])):
+        # Kẹp có độ tin cậy riêng (4 điểm nó dùng), KHÔNG theo độ tin cậy hướng lòng bàn tay: khi chụm/xoè, lòng
+        # bàn tay đổi dáng/bị che nên hướng tay hay về HOLD/ACQUIRE (tin cậy thấp) đúng lúc kẹp cần chạy.
+        grip_ids = [H_WRIST, H_MIDDLE_MCP, H_THUMB_TIP, H_INDEX_TIP]
+        if np.all(np.isfinite(pts[grip_ids])):
             ob.grip = float(np.linalg.norm(pts[H_THUMB_TIP] - pts[H_INDEX_TIP]) /
                             max(np.linalg.norm(pts[H_MIDDLE_MCP] - pts[H_WRIST]), 1e-6))
+            ob.conf["grip"] = float(np.min(confs[grip_ids]))
+        else:
+            # Đầu ngón bị bỏ ở 3D (thiếu camera/depth, dáng bất thường): lấy tỉ số từ điểm world MediaPipe của camera
+            # thấy bàn tay, ưu tiên camera tham chiếu (tỉ số không phụ thuộc thang đo nên dùng thẳng được).
+            for v in sorted(seen):
+                vo = self.view_frames[v].arms[side] if v < len(self.view_frames) else None
+                if vo is not None and vo.grip is not None:
+                    ob.grip, ob.conf["grip"] = vo.grip, float(views_obs[v]["hand"][side][1])
+                    break
         prev_q = max((self._facing[side][v] for v in seen), default=0.0) if self._facing[side] else 0.0
         raw_R, center, fit_rms, fit_mode = self.palms[side].estimate(pts, confs[list(PALM_IDS)], prev_q)
         quality, face_v = 0.0, [0.0] * len(self.cams)
@@ -833,6 +973,12 @@ class MultiViewPerception:
             if cam.rs_intr is None and s.intrinsics is not None:
                 cam.set_realsense_intrinsics(s.intrinsics)
         stale = msample.stale or [False] * len(msample.views)
+        if self.person_cfg.get("enabled", True):
+            if self._operator_ref is not None and \
+                    msample.t - self._operator_ref[1] > float(self.person_cfg.get("ref_keep_s", 0.5)):
+                self._operator_ref = None            # mất người quá lâu: ghép lại với người camera 0 đang khoá
+            for v in range(1, len(self.per_view)):
+                self.per_view[v].operator_match = partial(self._match_operator, v, msample.views[v])
         jobs = [(p, s.bgr) for p, s, st in zip(self.per_view, msample.views, stale) if not st]
         if self.pool is not None:
             done = list(self.pool.map(lambda a: a[0].process(a[1], msample.t), jobs))
@@ -845,6 +991,10 @@ class MultiViewPerception:
         self.view_frames = frames
         views_obs = [self._view_obs(v, s, f) for v, (s, f) in enumerate(zip(msample.views, frames))]
         fr, W = self.fuse(views_obs, msample.t)
+        self._sizes = [np.array([s.bgr.shape[1], s.bgr.shape[0]], float) for s in msample.views]
+        if np.all(np.isfinite(W[[L_SH, R_SH]])):
+            self._operator_ref = (W.copy(), msample.t)
+        fr.fusion["person"] = {self.cams[v].name: m for v, m in self.person_match.items()}
         fr.pose_2d, fr.hands_2d = frames[0].pose_2d, frames[0].hands_2d
         fr.fusion["skew_ms"] = 1000.0 * msample.skew_s
         fr.fusion["people"] = [p.n_people for p in self.per_view

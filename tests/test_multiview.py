@@ -207,6 +207,9 @@ def test_multiview_perception_end_to_end():
     R_true, _ = palm_frame_from_depth(hand, side="right")
     assert np.degrees(np.arccos(np.clip((Rb @ ob.H)[:, 2] @ R_true[:, 2], -1, 1))) < 10
     assert fr.fusion["hand_right"]["views"] == 2
+    # Kẹp: tỉ số đầu ngón cái-trỏ / bàn tay từ điểm 3D, độ tin cậy riêng
+    tips = np.linalg.norm(hand[4] - hand[8]) / np.linalg.norm(hand[9] - hand[0])
+    assert abs(ob.grip - tips) < 0.05 and ob.conf["grip"] >= 0.6
 
 
 # ---------------- hiệu chuẩn ChArUco ----------------
@@ -353,3 +356,48 @@ def test_stall_message_names_the_stalled_camera():
     src.stats = [{"frames": 90, "fails": 0, "error": None}, {"frames": 0, "fails": 3, "error": "timeout"}]
     assert src.describe_stall(3, "side45").startswith("Camera 'side45'")
     assert src.describe_stall(3).startswith("Camera 'front'")
+
+
+def test_camera_time_offset_from_motion_signal():
+    from openarm_shadow.calibration import estimate_time_offset
+    rng = np.random.default_rng(3)
+    t_ref = np.arange(0, 12, 1 / 30) + rng.uniform(0, 0.005, 360)
+    bursts = lambda t: sum(np.exp(-((t - c) / 0.15) ** 2) for c in (2.0, 3.7, 5.1, 6.9, 8.2, 9.8))
+    lag_true = 0.062                                     # iPhone đến máy chậm hơn webcam 62 ms
+    t = np.arange(0.01, 12, 1 / 25)
+    lag, corr = estimate_time_offset(t_ref, bursts(t_ref), t, bursts(t - lag_true) + rng.normal(0, 0.02, len(t)))
+    assert abs(lag - lag_true) < 0.008 and corr > 0.9
+
+
+def _source_with_buffers(sync, ref_times, other_times, latency=0.0):
+    """MultiCameraSource không mở camera thật: đặt sẵn bộ đệm (thời điểm đã bù latency) rồi gọi read()."""
+    import threading
+    from collections import deque
+    from openarm_shadow.multiview import MultiCameraSource
+    src = MultiCameraSource.__new__(MultiCameraSource)
+    src.names, src.tol, src.stale_s, src.pair_wait = ["front", "side45_left"], 0.025, 0.04, 0.0
+    src.sync, src.sync_max_wait, src.last_ref_t, src.running = sync, 0.15, -1.0, True
+    src.cond, src.error = threading.Condition(), None
+    src.stats = [{"frames": 1, "fails": 0, "error": None}] * 2
+    src.buf = [deque([(t, t) for t in ref_times], maxlen=12),
+               deque([(t - latency, t) for t in other_times], maxlen=12)]
+    return src
+
+
+def test_sync_slowest_pairs_late_camera_at_same_moment():
+    # Lúc 10.000 s: webcam đã có khung tới 9.999; iPhone (đến chậm 54 ms, bù latency_s 0.05) mới tới khung 9.950.
+    ref = [10.0 - k / 30 for k in range(8)][::-1]
+    late = [10.0 - 0.054 - k / 30 for k in range(8)][::-1]
+    ok, ms = _source_with_buffers("latest", ref, late, 0.05).read(timeout=0.1)
+    assert ok and ms.stale == [False, True]             # kiểu cũ: lấy khung webcam mới nhất -> iPhone bị bỏ
+    src = _source_with_buffers("slowest", ref, late, 0.05)
+    ok, ms = src.read(timeout=0.1)
+    assert ok and ms.stale == [False, False] and ms.lags[1] < 0.025
+    assert ms.t < 10.0 - 0.03                            # đổi lại: khung tham chiếu cũ hơn (trễ thêm)
+
+
+def test_sync_slowest_does_not_wait_for_frozen_camera():
+    ref = [10.0 - k / 30 for k in range(8)][::-1]
+    frozen = [9.5]                                       # camera phụ treo từ 0,5 s trước
+    ok, ms = _source_with_buffers("slowest", ref, frozen).read(timeout=0.1)
+    assert ok and ms.t == ref[-1] and ms.stale == [False, True]

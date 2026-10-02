@@ -71,6 +71,20 @@ fusion:
   # front: vai/khuỷu/cổ tay từ Pose camera 0, camera khác chỉ chạy Hand (nhẹ, mượt; như bản Openarm_Teleop)
   body_source: triangulate
   pair_wait_s: 0.025         # chờ khung khớp của camera phụ tối đa; 0 = không chờ (lấy khung gần nhất đang có)
+  # latest: khung tham chiếu mới nhất, không chờ (ít trễ; camera đến chậm hơn max_skew_s gần như luôn bị bỏ).
+  # slowest: khung tham chiếu mới nhất mà MỌI camera đã có khung cùng thời điểm (mọi camera cùng góp; trễ thêm bằng
+  # camera chậm nhất, vd iPhone DroidCam ~54 ms). Camera tụt sau quá sync_max_wait_s (treo) thì không chờ nó.
+  # Đo độ trễ từng camera: scripts/measure_camera_latency.py -> fusion.cameras[i].latency_s.
+  sync: latest
+  sync_max_wait_s: 0.15
+  # Khoá CÙNG 1 người ở mọi camera (multiview._match_operator): camera 0 tự khoá người điều khiển như khi chạy 1
+  # camera; camera phụ chỉ nhận người khớp với người đó, không ai khớp thì coi như không thấy (không triangulate vai
+  # của 2 người khác nhau). Có vai 3D hợp nhất trong ref_keep_s: chiếu vào camera phụ, nhận người có tâm vai cách
+  # điểm dự đoán < lock_dist x shoulder_m. Chưa có: triangulate với người camera 0, nhận sai số chiếu lại
+  # <= max_err_px (px quy đổi 640x480), bề rộng vai 3D trong shoulder_width_m và lệch bề rộng vai MediaPipe của camera 0
+  # <= width_tol (tỉ lệ), depth camera phụ lệch <= depth_tol_m.
+  person_match: {enabled: true, lock_dist: 1.0, shoulder_m: 0.35, ref_keep_s: 0.5, max_err_px: 30,
+                 shoulder_width_m: [0.2, 0.6], width_tol: 0.35, depth_tol_m: 0.25}
   # Hướng bàn tay nhiều nguồn (handfusion.OrientationFusion): đổi sang hướng cách > switch_deg cần switch_frames
   # khung liên tiếp (trong lúc chờ cổ tay đứng yên); nguồn lệch > max_disagree_deg bị bỏ; alpha -> fast_alpha khi
   # xoay nhanh (> fast_angle_deg/khung) để không trễ; mất tay giữ hold_frames khung (cổ tay đứng yên) rồi mới LOST.
@@ -144,6 +158,14 @@ filter:
   # 0.7) vẫn điều khiển cử động nhỏ nhưng không làm cổ tay lật ±87° (lần chạy thật đầu: J5 -87 -> 87).
   jump_confirm_conf: [0.7, 0.7, 0.7, 0.7, 0.8, 0.8, 0.8, 0]
   min_conf: 0.6
+  # Lọc khung xương cánh tay (filters.ArmShape): học độ dài cánh tay trên / cẳng tay (trung vị), đoạn lệch quá tol
+  # (tỉ lệ) -> đoạn đó không tin ở khung này (khớp giữ). Cần điểm 3D thang mét nhất quán: bật trong config fusion
+  # triangulate; 1 camera (MediaPipe world lẫn depth) để tắt.
+  arm_shape: {enabled: false, tol: 0.25, samples: 90, min_samples: 15, reset_s: 2.0, len_range_m: [0.12, 0.5]}
+  # Kalman vận tốc không đổi trên vai/khuỷu/cổ tay (filters.PointKalman) thay EMA landmark_ema_alpha. q: gia tốc
+  # (m/s^2, lớn = bám nhanh), r: nhiễu đo (m) khi tin cậy 1 (tin cậy thấp -> nhiễu lớn hơn). Mặc định TẮT: thử mô
+  # phỏng, so --record + scripts/measure_lag.py trước khi dùng trên robot thật.
+  landmark_kalman: {enabled: false, q: 6.0, r: 0.015, max_gap_s: 0.3}
 
 grip:
   # r = (đầu ngón cái - đầu ngón trỏ) / chiều dài bàn tay. Đo theo tay mình: phím g khi chạy (chụm rồi xoè 4 s),

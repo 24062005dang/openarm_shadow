@@ -98,3 +98,31 @@ def calibrate_intrinsics(board, detections, image_size):
         raise ValueError("cần ít nhất 8 ảnh bảng rõ để hiệu chuẩn nội tham số webcam")
     rms, K, dist, _, _ = cv2.calibrateCamera(obj, img, tuple(image_size), None, None)
     return K, dist.reshape(-1), float(rms)
+
+
+# ----------------------------------------------------------------------------------------------------------
+# Độ trễ tương đối giữa các camera (scripts/measure_camera_latency.py)
+# ----------------------------------------------------------------------------------------------------------
+def motion_energy(prev_small, small):
+    """Mức chuyển động giữa 2 ảnh xám thu nhỏ (float32): trung bình |hiệu|. Không cần nhận diện, đúng theo thời gian."""
+    return float(np.mean(np.abs(small - prev_small)))
+
+
+def estimate_time_offset(t_ref, x_ref, t, x, max_lag_s=0.3, step_s=0.002):
+    """Độ trễ (s) của tín hiệu x so với x_ref theo thời điểm khung đến máy: x(t) ~ x_ref(t - lag).
+    lag > 0: camera này trả khung chậm hơn camera tham chiếu lag giây. Tương quan chéo trên lưới đều.
+    -> (lag, hệ số tương quan tại đỉnh), hoặc (nan, nan) nếu đoạn chung quá ngắn."""
+    t_ref, x_ref, t, x = (np.asarray(v, float) for v in (t_ref, x_ref, t, x))
+    t0, t1 = max(t_ref[0], t[0]) + max_lag_s, min(t_ref[-1], t[-1]) - max_lag_s
+    if t1 - t0 < 2.0:
+        return float("nan"), float("nan")
+    grid = np.arange(t0, t1, step_s)
+    a = np.interp(grid, t_ref, x_ref)
+    a = (a - a.mean()) / (a.std() + 1e-9)
+    best = (float("nan"), -np.inf)
+    for lag in np.arange(-max_lag_s, max_lag_s + step_s / 2, step_s):
+        b = np.interp(grid + lag, t, x)
+        c = float(np.mean(a * (b - b.mean()) / (b.std() + 1e-9)))
+        if c > best[1]:
+            best = (float(lag), c)
+    return best

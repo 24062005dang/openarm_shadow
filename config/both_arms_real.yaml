@@ -1,0 +1,36 @@
+# Hai tay OpenArm thật. Đặt SAU config tay phải + kẹp, TRƯỚC config fusion:
+#   python scripts/shadow.py --source multi --robot openarm --dry-run \
+#       --config config/wrist_real_30.yaml --config config/gripper_real.yaml \
+#       --config config/both_arms_real.yaml --config config/fusion_3cam.yaml
+#   (bỏ --dry-run để chạy thật, sau khi dry-run đã đúng chiều mọi khớp tay trái)
+#
+# Tay phải: giữ như wrist_real_30.yaml + gripper_real.yaml (đã chạy ổn 02/10: J1-J7 + kẹp).
+# Tay trái, lượt đầu (như tay phải ngày 30/09): J1-J4 biên độ nhỏ, J5-J7 khoá ở 0, kẹp bật. Ổn rồi mới mở cổ tay:
+# thêm --config config/both_arms_wrist_real.yaml NGAY SAU file này.
+
+mapping:
+  robot_arms: [right, left]
+
+safety:
+  soft_limits_deg:
+    #        J1          J2         J3          J4        J5      J6      J7
+    left:  [[-45, 10], [-45, 0], [-30, 30], [0, 90], [0, 0], [0, 0], [0, 0]]
+
+robot:
+  urdf_to_motor:
+    left:
+      # Chiều đã kiểm chứng bằng dry-run 02/10, cả 7 khớp + kẹp đúng URDF: J1 nâng trước -, J2 dang -, J3 xoay ra
+      # ngoài -, J4 gập +, J5 xoay ra ngoài -, J6 kẹp ra xa thân +, J7 kẹp về trước -, kẹp mở +.
+      sign: [1, 1, 1, 1, 1, 1, 1]
+      # OpenArm v1.0 tay trái: motor J1, J2 lắp lệch ~180° (openarm_driver joint_offsets = pi), KHÔNG phải zero sai.
+      # Backend wrap góc ±180° nên số đọc +178° hay -182° đều hiểu đúng.
+      # Đo 02/10 (read_joints.py, motor tắt) ở tư thế 0: tay buông thẳng, khuỷu duỗi tựa chặn, cẳng tay chỉ thẳng
+      # ra trước khi gập 90° (J3), cổ tay thẳng, kẹp đối xứng gương tay phải:
+      #   J1 177.4  J2 180.0  J3 -1.8  J4 -7.5 (tựa chặn)  J5 -72.1  J6 8.8  J7 -0.2   (openarm_driver: 180 180 0 0
+      #   -68.2 6.6 1.9 -> lệch 2-4°, dùng số đo)
+      # J4 -5.0 (không phải -7.5): tựa chặn -> URDF -2.5° (trong ngưỡng bật motor), lệnh 0° không ép khuỷu vào chặn.
+      offset_deg: [177.4, 180.0, -1.8, -5.0, -72.1, 8.8, -0.2]
+  gripper:
+    # Kẹp tay trái: đóng hết cỡ đọc 53.0° (đo 02/10), mở hết cỡ ~-14.8°. Dùng 60° hành trình như tay phải.
+    # Kẹp phải: robot.gripper chung (gripper_real.yaml).
+    left: {open_deg: -7.0, closed_deg: 53.0}

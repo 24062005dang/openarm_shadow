@@ -10,7 +10,8 @@ gói có DLC >= 8 từ recv id là gói trạng thái, nên phản hồi ghi tha
 thành góc rác, vd q = -12.4676 rad. Nếu số rác này thành lệnh vị trí, tay sẽ giật mạnh. Vì vậy:
 - xả hết gói còn trên bus sau khi đổi chế độ và sau khi enable;
 - trước khi enable phải có 2 lần đọc liên tiếp khớp nhau, và khớp với tư thế lúc connect();
-- mỗi lần đọc: |q| > max_abs_rad hoặc nhảy > max_jump_rad so với lần tốt gần nhất -> bỏ, giữ giá trị tốt gần nhất;
+- mỗi lần đọc: |q| > max_abs_rad + |offset| hoặc nhảy > max_jump_rad so với lần tốt gần nhất -> bỏ, giữ giá trị tốt
+  gần nhất;
 - một khớp đọc hỏng liên tục quá bad_hold_s -> RobotFault (trừ khi đang về tư thế nghỉ, xem `returning`).
 """
 from __future__ import annotations
@@ -28,6 +29,11 @@ class RobotFault(RuntimeError):
     pass
 
 
+def wrap(a):
+    """Góc về [-pi, pi)."""
+    return (np.asarray(a, float) + np.pi) % (2 * np.pi) - np.pi
+
+
 class _Arm:
     def __init__(self, side, rcfg):
         import openarm_can as oa
@@ -37,14 +43,15 @@ class _Arm:
         m = rcfg["urdf_to_motor"][side]
         self.sign = np.asarray(m["sign"], float)
         self.offset = np.deg2rad(np.asarray(m["offset_deg"], float))
-        # motor_limits_deg là giới hạn khớp thật (góc URDF). Đổi sang góc motor bằng cùng sign/offset,
-        # để khi bù zero bằng offset phần mềm thì giới hạn dịch theo (vd J4 thẳng tay đọc -7.7°).
+        # motor_limits_deg: giới hạn khớp thật, theo góc URDF. Kiểm tra trên góc URDF (đã bù sign/offset và wrap),
+        # không trên góc motor: offset 180° (J1/J2 tay trái v1.0) làm góc motor đọc được +178° hay -182° tuỳ lúc.
         lim = np.deg2rad(np.asarray(rcfg["motor_limits_deg"][side], float))
-        a, b = self.sign * lim[:, 0] + self.offset, self.sign * lim[:, 1] + self.offset
-        self.mlo, self.mhi = np.minimum(a, b), np.maximum(a, b)
+        self.ulo, self.uhi = lim[:, 0], lim[:, 1]
         self.kp = np.asarray(rcfg["kp"], float)
         self.kd = np.asarray(rcfg["kd"], float)
-        g = rcfg["gripper"]
+        # Kẹp: robot.gripper chung, ghi đè từng tay bằng robot.gripper.<side> (zero kẹp tay trái v1.0 khác tay phải)
+        g = {k: v for k, v in rcfg["gripper"].items() if k not in ("right", "left")}
+        g.update(rcfg["gripper"].get(side) or {})
         self.grip_on = bool(g["enabled"])
         self.g_open, self.g_closed = np.deg2rad(g["open_deg"]), np.deg2rad(g["closed_deg"])
         self.g_kp, self.g_kd = float(g["kp"]), float(g["kd"])
@@ -52,7 +59,9 @@ class _Arm:
         # --dry-run chỉ hỏi góc mỗi khung camera (fusion 2 camera trên CPU: 80-150 ms/khung) -> ngưỡng riêng, rộng hơn
         self.poll_stale_s = float(rcfg.get("poll_feedback_timeout_s", 0.5))
         rf = rcfg.get("read_filter", {})
-        self.max_abs = float(rf.get("max_abs_rad", 3.7))
+        # Số rác (vd -12.47 rad) nằm ngoài |offset| + max_abs_rad; khớp offset 180° đọc tới ~4.5 rad là hợp lệ.
+        self.max_abs = float(rf.get("max_abs_rad", 3.7)) + np.abs(self.offset)
+        self.g_max_abs = float(rf.get("max_abs_rad", 3.7))
         self.max_jump = float(rf.get("max_jump_rad", 0.35))
         self.bad_hold_s = float(rf.get("bad_hold_s", 0.2))
         self.consistent_tol = np.deg2rad(float(rf.get("consistent_tol_deg", 1.0)))
@@ -71,11 +80,17 @@ class _Arm:
         self.drain()
 
     # ---- đổi đơn vị ----
-    def to_motor(self, q_urdf):
-        return self.sign * np.asarray(q_urdf) + self.offset
+    def to_motor(self, q_urdf, near=None):
+        """Góc URDF -> góc motor. near (góc motor đang đo): chọn góc tương đương (cách 2pi) gần nó nhất, để khớp
+        offset 180° không bị lệnh quay gần một vòng khi số đọc đang ở phía -180°."""
+        m = self.sign * np.asarray(q_urdf, float) + self.offset
+        if near is None:
+            return m
+        near = np.asarray(near, float)
+        return np.where(np.isfinite(near), near + wrap(m - near), m)
 
     def to_urdf(self, q_motor):
-        return (np.asarray(q_motor) - self.offset) * self.sign
+        return wrap(np.asarray(q_motor, float) - self.offset) * self.sign
 
     def grip_to_motor(self, f):
         return self.g_closed + f * (self.g_open - self.g_closed)
@@ -117,7 +132,7 @@ class _Arm:
         self.q_raw = raw
         self.q_motor = np.where(ok, raw, self.q_motor)
         self.bad_since = np.where(ok, np.nan, np.where(np.isnan(self.bad_since), now, self.bad_since))
-        if np.isfinite(g) and abs(g) <= self.max_abs:
+        if np.isfinite(g) and abs(g) <= self.g_max_abs:
             self.g_motor = g
 
     def check_fresh(self, tolerate_bad=False, stale_s=None):
@@ -149,11 +164,11 @@ class _Arm:
             self.arm.refresh_all()
             self.arm.recv_all(2000)
             raw, g = self._read_raw()
-            valid = bool(np.all(np.isfinite(raw)) and np.all(np.abs(raw) <= self.max_abs))
+            valid = bool(np.all(np.isfinite(raw)) and np.all(np.abs(raw) <= self.max_abs))   # max_abs theo khớp
             if valid and prev is not None and np.max(np.abs(raw - prev)) <= self.consistent_tol:
                 self.q_motor, self.q_raw = raw.copy(), raw.copy()
                 self.bad_since[:] = np.nan
-                if np.isfinite(g) and abs(g) <= self.max_abs:
+                if np.isfinite(g) and abs(g) <= self.g_max_abs:
                     self.g_motor = g
                 return raw
             prev = raw if valid else None
@@ -202,10 +217,10 @@ class OpenArmCANRobot:
         tol = np.deg2rad(tol_deg)
         out = []
         for s, a in self.arms.items():
-            q = a.q_motor
-            for i in np.flatnonzero((q < a.mlo - tol) | (q > a.mhi + tol)):
-                out.append(f"{s} J{i + 1}: motor {np.rad2deg(q[i]):7.1f}° (giới hạn motor "
-                           f"{np.rad2deg(a.mlo[i]):.1f}..{np.rad2deg(a.mhi[i]):.1f}°, "
+            q = a.to_urdf(a.q_motor)
+            for i in np.flatnonzero(~np.isfinite(q) | (q < a.ulo - tol) | (q > a.uhi + tol)):
+                out.append(f"{s} J{i + 1}: URDF {np.rad2deg(q[i]):7.1f}° = motor {np.rad2deg(a.q_motor[i]):7.1f}° "
+                           f"(giới hạn {np.rad2deg(a.ulo[i]):.1f}..{np.rad2deg(a.uhi[i]):.1f}°, "
                            f"offset {np.rad2deg(a.offset[i]):+.1f}°)")
         return out
 
@@ -254,12 +269,13 @@ class OpenArmCANRobot:
         tau = self.gravity.torques({s: np.asarray(cmd[s][:7]) for s in self.sides}) if self.gravity else None
         oa = next(iter(self.arms.values())).oa
         for s, a in self.arms.items():
-            q_m = np.clip(a.to_motor(cmd[s][:7]), a.mlo, a.mhi)
+            q_u = np.clip(np.asarray(cmd[s][:7], float), a.ulo, a.uhi)     # chốt chặn cuối, theo góc URDF
+            q_m = a.to_motor(q_u, near=a.q_motor)
             ff = np.zeros(7) if tau is None else a.sign * tau[s]
             dq_m = np.zeros(7)
             if dq is not None and dq.get(s) is not None:
                 dq_m = a.sign * np.nan_to_num(np.asarray(dq[s][:7], float))
-                dq_m[(q_m <= a.mlo) | (q_m >= a.mhi)] = 0.0       # ở chốt giới hạn motor: không đẩy thêm
+                dq_m[(q_u <= a.ulo) | (q_u >= a.uhi)] = 0.0       # ở chốt giới hạn: không đẩy thêm
             a.arm.get_arm().mit_control_all(
                 [oa.MITParam(float(a.kp[i] * ramp), float(a.kd[i]), float(q_m[i]), float(dq_m[i]), float(ff[i]))
                  for i in range(7)])

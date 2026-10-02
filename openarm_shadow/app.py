@@ -76,6 +76,16 @@ def fusion_lines(fr, sides):
     out = [f"fusion {fi.get('views', 0)} cam | lech khung {fi.get('skew_ms', 0.0):.0f} ms"
            + (" | nguoi thay: " + "/".join(str(n) for n in people) + " (khoa 1 nguoi)" if people else "")
            + (f" | MAT KHUNG: {', '.join(fi['stale'])}" if fi.get("stale") else "")]
+    match = fi.get("person") or {}
+    if match:
+        # Camera phụ có chọn đúng người camera 0 đang khoá không (multiview._match_operator)
+        def txt(m):
+            if m["mode"] == "tu khoa":
+                return "tu khoa"
+            err = m.get("err", float("nan"))
+            val = "" if not np.isfinite(err) else (f" {err:.2f}" if m["mode"] == "3D" else f" {err:.0f}px")
+            return ("khop " if m["ok"] else "KHONG KHOP ") + m["mode"] + val
+        out.append("cung 1 nguoi: " + " | ".join(f"{n} {txt(m)}" for n, m in match.items()))
     names = {"right": (12, 14, 16), "left": (11, 13, 15)}
     for s in sides:
         pts = fi.get("points", {})
@@ -379,6 +389,14 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                     if inf is not None:
                         lines.append(f"{s}: err u {inf.err_upper_deg:5.1f} l {inf.err_fore_deg:5.1f} "
                                      f"tay {inf.err_hand_deg:5.1f} deg" + (" [thang]" if inf.elbow_straight else ""))
+                    ai = pipe.arm_shape_info.get(s)
+                    if ai is not None:
+                        # Lọc khung xương: độ dài đoạn tay khung này (cm) x tỉ lệ so với độ dài đã học; BO = khớp giữ
+                        def seg(name, k):
+                            r = ai["ratio"][k]
+                            return (f"{name} {100 * ai['len'][k]:.0f}cm" + (f" x{r:.2f}" if np.isfinite(r) else
+                                    " (dang hoc)") + ("" if ai["ok"][k] else " BO"))
+                        lines.append(f"{s} xuong: " + seg("tren", 0) + " | " + seg("cang", 1))
                     if s in targets:
                         at, ac = np.rad2deg(targets[s][:4]), np.rad2deg(cmd[s][:4])
                         lines.append(f"{s} J1-4 target " + " ".join(f"{v:5.1f}" for v in at) + " | cmd " +

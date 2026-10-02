@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .filters import EMA, JointFilter
+from .filters import EMA, ArmShape, JointFilter, PointKalman
 from .grip import GripMapper
 from .geometry import angle_between, orthonormalize, unit
 from .kinematics import ArmKinematics
@@ -35,6 +35,15 @@ class ShadowPipeline:
             for s in self.robot_sides
         }
         self.lm_ema = {s: EMA(fc["landmark_ema_alpha"]) for s in self.robot_sides}
+        # Kalman điểm 3D thay EMA (tuỳ chọn), lọc khung xương cánh tay (tuỳ chọn; cần điểm thang mét nhất quán)
+        kc = dict(fc.get("landmark_kalman") or {})
+        self.lm_kf = ({s: PointKalman(kc.get("q", 6.0), kc.get("r", 0.015), kc.get("max_gap_s", 0.3))
+                       for s in self.robot_sides} if kc.get("enabled", False) else None)
+        ac = dict(fc.get("arm_shape") or {})
+        self.arm_shape = ({s: ArmShape(ac.get("tol", 0.25), ac.get("samples", 90), ac.get("min_samples", 15),
+                                       ac.get("reset_s", 2.0), ac.get("len_range_m", (0.12, 0.5)))
+                           for s in self.robot_sides} if ac.get("enabled", False) else None)
+        self.arm_shape_info = {s: None for s in self.robot_sides}
         g = cfg["grip"]
         self.grip = {s: GripMapper(g["pinch_ratio"], g["open_ratio"], g.get("levels"), g.get("level_hysteresis", 0.05),
                                    g.get("level_dwell_s", 0.15), g.get("calib_s", 4.0))
@@ -199,10 +208,25 @@ class ShadowPipeline:
             ob = self._obs_for_robot(frame, s)
             fc = self.cfg["filter"]
             c_up, c_fo, c_ha = ob.conf["upper"], ob.conf["fore"], ob.conf["hand"]
+            c_gr = ob.conf.get("grip", c_ha)        # fusion: kẹp có độ tin cậy riêng (không theo hướng bàn tay)
             ok_up, ok_fo, ok_ha = c_up >= fc["min_conf"], c_fo >= fc["min_conf"], c_ha >= fc["min_conf"]
             u = l = H = None
+            if self.arm_shape is not None:
+                self.arm_shape_info[s] = None
+                if ob.s is not None and ok_up:
+                    good_up, good_fo, self.arm_shape_info[s] = self.arm_shape[s](ob.s, ob.e, ob.w, frame.t,
+                                                                                 (ok_up, ok_up and ok_fo))
+                    if not (good_up and good_fo):
+                        # Một đoạn sai độ dài thường do khuỷu sai (làm sai hướng CẢ hai đoạn, nhưng độ dài chỉ lộ ra ở
+                        # một đoạn) -> giữ cả J1-J4, không phân biệt được khuỷu hay cổ tay sai.
+                        c_up = c_fo = 0.0
+                        ok_up = ok_fo = False
             if ob.s is not None and ok_up:
-                pts = self.lm_ema[s](np.stack([ob.s, ob.e, ob.w]))
+                raw_pts = np.stack([ob.s, ob.e, ob.w])
+                if self.lm_kf is not None:
+                    pts = self.lm_kf[s](raw_pts, frame.t, min(c_up, c_fo) if ok_fo else c_up)
+                else:
+                    pts = self.lm_ema[s](raw_pts)
                 s_, e_, w_ = pts
                 u = e_ - s_
                 if ok_fo:
@@ -212,9 +236,9 @@ class ShadowPipeline:
             q, info = self.rt[s].solve(u, l, H, self.q_prev[s])
             self.q_prev[s] = q
             self.last_info[s] = info
-            grip = self.grip[s](ob.grip if ok_ha else None, frame.t)
+            grip = self.grip[s](ob.grip if c_gr >= fc["min_conf"] else None, frame.t)
             raw = np.append(q, grip)
-            conf = np.array([c_up, c_up, c_fo, c_fo, c_ha, c_ha, c_ha, c_ha])
+            conf = np.array([c_up, c_up, c_fo, c_fo, c_ha, c_ha, c_ha, c_gr])
             if u is None:
                 conf[:2] = 0
             if l is None:

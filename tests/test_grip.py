@@ -63,3 +63,27 @@ def test_pipeline_grip_holds_when_hand_lost():
     fr.arms["right"].grip = None                    # mất ngón cái/trỏ
     out = pipe.step(fr)
     assert out["right"][7] == g0 and pipe.held["right"][7]
+
+
+def test_grip_follows_fingers_when_palm_orientation_uncertain():
+    # Fusion 2 camera: chụm tay làm hướng lòng bàn tay về HOLD (conf hand thấp) nhưng 2 ngón vẫn thấy rõ ->
+    # kẹp vẫn phải chạy theo ngón (trước đây kẹp đứng yên vì dùng chung độ tin cậy hướng bàn tay).
+    cfg = load_config()
+    cfg["mapping"]["robot_arms"] = ["right"]
+    pipe = ShadowPipeline(cfg)
+    pipe.seed({"right": np.zeros(8)})
+    q = {"right": np.deg2rad([20, 20, 0, 60, 0, 0, 0])}
+    for i in range(30):
+        out = pipe.step(fake_frame(pipe, q, i / 15))
+    g_open = out["right"][7]
+    for i in range(30, 60):
+        fr = fake_frame(pipe, q, i / 15)
+        fr.arms["right"].grip = 0.2                     # chụm
+        fr.arms["right"].conf.update(hand=0.2, grip=0.9)
+        out = pipe.step(fr)
+    assert out["right"][7] < g_open - 0.3 and not pipe.held["right"][7]
+    assert pipe.held["right"][4]                         # cổ tay vẫn giữ vì hướng tay chưa chắc
+    fr.arms["right"].conf.update(grip=0.3)               # chính 2 ngón không rõ -> kẹp giữ
+    fr.arms["right"].grip = 0.9
+    g = pipe.step(fr)["right"][7]
+    assert np.isclose(g, out["right"][7]) and pipe.held["right"][7]

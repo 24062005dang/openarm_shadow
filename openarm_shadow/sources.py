@@ -47,7 +47,9 @@ class OpenCVSource:
         if not self.cap.isOpened():
             raise SystemExit(f"Không mở được nguồn video: {source}")
         if is_index:
-            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)     # bớt khung cũ đọng trong buffer driver (giảm trễ)
+            # Bớt khung cũ đọng trong buffer driver (giảm trễ). Không đặt 1: driver không có buffer trống để ghi
+            # trong lúc khung đang được đọc -> mất 1/2 khung (webcam Sonix 720p MJPG: 15 thay vì 30 fps).
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
         self.warning = None
         if is_index:
             self._configure_webcam(int(source), width, height, fourcc, fps)

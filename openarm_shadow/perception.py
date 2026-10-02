@@ -520,7 +520,14 @@ class Perception:
         # Khoá người: nhớ vai người điều khiển tới lock_keep_frames lần Pose liền không thấy họ (đi khuất ngắn, bị
         # che) để người khác trong khung không cướp quyền; quá lâu mới chọn lại người to nhất.
         lock = getattr(self, "_lock", None)
-        k = select_operator(cands, lock[0] if lock else None, getattr(self, "lock_dist", 1.0))
+        # Fusion nhiều camera: camera phụ chọn đúng người camera tham chiếu đang khoá (MultiViewPerception.
+        # _match_operator): trả chỉ số, -1 = không ai khớp (coi như hụt), None = chưa có tham chiếu -> tự khoá.
+        match = getattr(self, "operator_match", None)
+        k = match(cands) if match is not None and cands else None
+        if k is None:
+            k = select_operator(cands, lock[0] if lock else None, getattr(self, "lock_dist", 1.0))
+        elif k < 0:
+            k = None
         if k is not None:
             self._lock = (cands[k], 0)
             W = np.array([[p.x, p.y, p.z] for p in pres.pose_world_landmarks[k]])
