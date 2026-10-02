@@ -1,0 +1,2 @@
+robot:
+  gripper: {enabled: true, open_deg: -60, closed_deg: 0, kp: 5.0, kd: 0.1}
