@@ -17,7 +17,7 @@ os.environ.setdefault("GLOG_minloglevel", "2")   # ẩn log INFO/WARNING của M
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from openarm_shadow.app import run
+from openarm_shadow.runtime import run
 from openarm_shadow.config import load_config
 
 

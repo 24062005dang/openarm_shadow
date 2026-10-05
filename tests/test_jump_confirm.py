@@ -82,7 +82,7 @@ def test_find_jumps_script(tmp_path):
 def test_fusion_row_reads_arm_points():
     from types import SimpleNamespace
 
-    from openarm_shadow.app import fusion_row
+    from openarm_shadow.runtime.recorder import fusion_row
     from openarm_shadow.perception import ARM_IDX
     s, e, w = ARM_IDX["right"]
     fr = SimpleNamespace(fusion={"points": {s: {"views": 2, "err_px": 3.0, "depth": 0},
