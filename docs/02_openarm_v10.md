@@ -1,7 +1,7 @@
 # OpenArm v1.0: thông số dùng trong repo
 
 Nguồn: `enactic/openarm_description` commit 14ff67b (Apache-2.0), file `assets/robot/openarm_v1.0/urdf/example/v1.urdf`;
-`openarm_can` commit f340d4b; LeRobot `openarm_follower`. Dữ liệu động học đã trích ra `openarm_shadow/data/openarm_v10_arms.json`
+`openarm_can` commit f340d4b; LeRobot `openarm_follower`. Dữ liệu động học đã trích ra `openarm_shadow/core/data/openarm_v10_arms.json`
 (sinh lại bằng `scripts/extract_kinematics.py`).
 
 ## Khung và tư thế 0

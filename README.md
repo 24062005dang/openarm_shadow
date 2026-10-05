@@ -15,14 +15,14 @@ Webcam / điện thoại ──► MediaPipe Pose + Hand ──► khung thân n
 
 | Khâu | File | Lấy ý tưởng từ |
 | --- | --- | --- |
-| Nhận diện người + bàn tay (CPU) | `openarm_shadow/perception.py` | MediaPipe Tasks; ghép bàn tay theo cổ tay như repo Marionette |
+| Nhận diện người + bàn tay (CPU) | `openarm_shadow/perception/landmarker.py` | MediaPipe Tasks; ghép bàn tay theo cổ tay như repo Marionette |
 | Khung thân (x trước, y trái, z lên) | `geometry.make_frame` | MakeFrame trong SEW-Mimic |
-| Ánh xạ sang 7 khớp | `openarm_shadow/retarget.py` | SEW-Mimic (arXiv 2602.01632): căn **hướng** cánh tay, cẳng tay, bàn tay bằng bài toán con SP1/SP2 |
-| Lọc | `openarm_shadow/filters.py` | One Euro + vùng chết + bỏ bước nhảy (Marionette), EMA điểm mốc 0.8 (Hand Shadowing) |
-| An toàn | `openarm_shadow/safety.py` | Ly hợp + dead-man + tăng tốc mềm (Marionette, kinetic-arm-lab), capsule chống hai tay va nhau (SEW-Mimic) |
-| Fusion 2 camera (`--source multi`) | `openarm_shadow/multiview.py`, `calibration.py` | Pose2Sim (triangulate có trọng số), caliscope/aniposelib (ChArUco), stereohand (đồng bộ) — xem `docs/FUSION.md` |
+| Ánh xạ sang 7 khớp | `openarm_shadow/retarget/sew.py` | SEW-Mimic (arXiv 2602.01632): căn **hướng** cánh tay, cẳng tay, bàn tay bằng bài toán con SP1/SP2 |
+| Lọc | `openarm_shadow/filtering/joint.py` | One Euro + vùng chết + bỏ bước nhảy (Marionette), EMA điểm mốc 0.8 (Hand Shadowing) |
+| An toàn | `openarm_shadow/safety/gate.py` | Ly hợp + dead-man + tăng tốc mềm (Marionette, kinetic-arm-lab), capsule chống hai tay va nhau (SEW-Mimic) |
+| Fusion 2 camera (`--source multi`) | `openarm_shadow/fusion/`, `openarm_shadow/cameras/calibration.py` | Pose2Sim (triangulate có trọng số), caliscope/aniposelib (ChArUco), stereohand (đồng bộ) — xem `docs/FUSION.md` |
 | Robot thật | `openarm_shadow/robot/openarm_can_robot.py` | `openarm_can`, gain chính thức v1.0 |
-| Động học OpenArm v1.0 | `openarm_shadow/kinematics.py` + `data/openarm_v10_arms.json` | URDF của `enactic/openarm_description` |
+| Động học OpenArm v1.0 | `openarm_shadow/core/kinematics.py` + `data/openarm_v10_arms.json` | URDF của `enactic/openarm_description` |
 
 Toàn bộ code tự viết; không chép code từ các repo trên (phần lớn không có license).
 
@@ -52,7 +52,7 @@ python3 -m venv --system-site-packages .venv   # system-site để thấy python
 source .venv/bin/activate
 pip install -r requirements.txt
 bash scripts/download_models.sh                # model MediaPipe vào models/
-python -m pytest -q                            # 141 test phải đạt
+python -m pytest -q                            # mọi test phải đạt (165 ngày 05/10)
 python scripts/check_kinematics.py             # in trục khớp, thử ngược retarget
 ```
 
@@ -115,7 +115,7 @@ config/fusion_2cam.yaml` (thứ tự này).
   hợp với động tác biểu diễn, chưa hợp gắp chính xác.
 - Nhiều nghiệm → chọn nghiệm trong giới hạn khớp và gần tư thế trước nhất.
 - Kẹp: r = (đầu ngón cái − đầu ngón trỏ) / chiều dài bàn tay, chụm = đóng (0), xoè = mở hẳn (1), mở liên tục theo
-  hai ngón (`openarm_shadow/grip.py`). Phím **g** khi chạy: chụm hết cỡ rồi xoè hết cỡ trong 4 s để đo theo tay
+  hai ngón (`openarm_shadow/retarget/grip.py`). Phím **g** khi chạy: chụm hết cỡ rồi xoè hết cỡ trong 4 s để đo theo tay
   mình (số in ra terminal, ghi vào `grip:` để dùng lần sau). Chỉ muốn vài mức: `grip.levels: [0, 0.5, 1]`.
   Motor kẹp chỉ chạy khi `robot.gripper.enabled: true` (đo trước góc mở/đóng thật bằng `tools/bringup/read_joints.py`).
 
@@ -125,7 +125,17 @@ Chi tiết và nguồn: `docs/DESIGN.md`, `docs/05_diem_moi_2_bai_bao.md`.
 
 ```
 config/default.yaml          mọi tham số (ghi đè bằng --config file_của_bạn.yaml)
-openarm_shadow/              thư viện
+openarm_shadow/              thư viện, mỗi package con một nhiệm vụ:
+  core/                      hình học, SP1/SP2, phép quay, động học OpenArm v1.0 (+ data JSON từ URDF)
+  cameras/                   webcam / RealSense, nhiều camera đồng bộ, phát lại dữ liệu thô, hiệu chuẩn ChArUco
+  perception/                MediaPipe 1 camera, khoá người, gán bàn tay, depth; kiểu ArmObs / Frame
+  fusion/                    triangulation, cùng 1 người ở mọi camera, bàn tay 3D, hướng tay, hợp nhất thân
+  filtering/                 One Euro + xác nhận bước nhảy theo khớp; EMA / Kalman / độ dài xương trên điểm 3D
+  retarget/                  retarget hướng kiểu SEW-Mimic, kẹp, pipeline quan sát -> mục tiêu khớp
+  safety/                    SafetyGate
+  robot/                     robot mô phỏng, OpenArm qua CAN-FD, bù trọng lực
+  runtime/                   vòng chạy chính, luồng điều khiển, luồng perception, tự engage, ghi --record
+  viz/                       vẽ khung xương / robot, dòng chữ chẩn đoán
 scripts/demo_sim.py          mô phỏng không cần camera (người giả lập)
 scripts/shadow.py            chạy teleop (sim / openarm)
 scripts/offline_retarget.py  video -> .npz
@@ -139,6 +149,9 @@ scripts/find_jumps.py        liệt kê các lần mục tiêu khớp nhảy l�
 scripts/bench_mediapipe.py   so tốc độ MediaPipe CPU và GPU trên máy này (models.delegate)
 scripts/make_charuco_board.py in bảng ChArUco A4
 scripts/calibrate_cameras.py hiệu chuẩn ngoại tham số nhiều camera -> config/cameras_calib.yaml
+scripts/measure_camera_latency.py độ trễ tương đối giữa các camera -> fusion.cameras[i].latency_s
+scripts/record_multicam_raw.py ghi ảnh + depth thô mọi camera (không bật motor)
+scripts/replay_raw.py        chạy lại perception + fusion + pipeline trên dữ liệu thô; --compare để kiểm tra hồi quy
 tools/bringup/               script bật CAN, đọc khớp, lắc J7 (bring-up robot)
 tests/                       pytest
 docs/README.md               mục lục tài liệu + lộ trình

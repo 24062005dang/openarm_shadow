@@ -7,7 +7,7 @@
   Thiếu hông (ngồi sau bàn) thì lấy hướng "lên" của camera.
 - Vì hai khung cùng quy ước, hướng đoạn tay người đưa thẳng vào retarget, không cần hiệu chuẩn chiều dài.
 
-## Retarget (openarm_shadow/retarget.py)
+## Retarget (openarm_shadow/retarget/sew.py)
 OpenArm v1.0 có 7 khớp quay, hai trục liên tiếp luôn vuông góc (test `test_consecutive_axes_perpendicular`),
 ở q = 0 trục J3 và J5 chạy dọc cánh tay trên và cẳng tay. Nên:
 
