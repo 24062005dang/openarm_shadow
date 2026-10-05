@@ -163,8 +163,11 @@ giao diện, nên dùng lại được trong node ROS 2 hoặc công cụ offlin
 | `robot/openarm_can_robot.py` | 326 | Backend CAN thật |
 | `robot/sim.py` | 30 | Robot lý tưởng: đo = lệnh |
 | `robot/gravity.py` | 31 | Bù trọng lực Pinocchio (tắt, chưa kiểm chứng) |
+| `robot/ros2_bridge.py` | 266 | `Ros2Robot`: nhận `/openarm/joint_states`, phát 14 khớp + 2 kẹp cho backend OpenArm; chỉ phát khi engage (docs/ROS2.md) |
+| `ros2/openarm_shadow_ros/` | | Package ROS 2 (ament_python): node `teleop` + `teleop.launch.py` |
 | **runtime/** | | **Chạy teleop** |
-| `runtime/app.py` | 247 | `open_perception`, `run`: nối các khối, phím, hiển thị, về tư thế nghỉ khi thoát |
+| `runtime/cli.py` | 44 | Tham số dòng lệnh dùng chung cho `scripts/shadow.py` và node ROS 2 |
+| `runtime/app.py` | 250 | `open_perception`, `run`: nối các khối, phím, hiển thị, về tư thế nghỉ khi thoát |
 | `runtime/controller.py` | 77 | Luồng điều khiển 100 Hz, `park`, chặn engage khi cổ tay chưa hiệu chuẩn |
 | `runtime/worker.py` | 49 | Luồng perception, luôn giữ kết quả mới nhất |
 | `runtime/session.py` | 46 | `AutoEngage`: tự engage sau khi giữ READY liên tục |
@@ -172,27 +175,6 @@ giao diện, nên dùng lại được trong node ROS 2 hoặc công cụ offlin
 | **viz/** | | **Hiển thị** |
 | `viz/draw.py` | 145 | Vẽ khung xương lên ảnh, hình que robot hai góc nhìn |
 | `viz/hud.py` | 141 | Dòng chữ chẩn đoán, huy hiệu READY/FOLLOW |
-
---- | ---: | --- |
-| `scripts/shadow.py` | 50 | Điểm vào: đọc tham số dòng lệnh, ghép config, gọi `app.run` |
-| `openarm_shadow/runtime/app.py` | 520 | Vòng chạy chính, luồng điều khiển, luồng perception, phím, hiển thị, ghi `--record`, về tư thế nghỉ |
-| `openarm_shadow/config.py` | 27 | Đọc `default.yaml` rồi ghép đè lần lượt các file `--config` |
-| `openarm_shadow/cameras/sources.py` | 176 | `OpenCVSource` (webcam/video/URL), `RealSenseSource` (RGB+depth align, lọc disparity) |
-| `openarm_shadow/perception/landmarker.py` | 773 | MediaPipe 1 camera, khoá người, gán bàn tay, depth D455, khung lòng bàn tay, ổn định hướng |
-| `openarm_shadow/fusion/multiview.py` | 1024 | Đồng bộ nhiều camera, mô hình camera, `fuse_point`, khoá cùng người giữa các camera, hợp nhất thân + bàn tay |
-| `openarm_shadow/fusion/hand.py` | 263 | Gán bàn tay–cổ tay, `HandShape`, `PalmModel` (Kabsch), `OrientationFusion` (máy trạng thái hướng tay) |
-| `openarm_shadow/retarget/pipeline.py` | 259 | Nối perception → retarget → lọc; tự hiệu chuẩn hướng tay; kẹp |
-| `openarm_shadow/retarget/sew.py` | 156 | Ánh xạ hướng chi → 7 góc khớp (SP2/SP1), chọn nghiệm, phản chiếu gương |
-| `openarm_shadow/core/geometry.py` | 147 | Rodrigues, SP1/SP2/SP4, `make_frame`, khoảng cách đoạn–đoạn |
-| `openarm_shadow/core/kinematics.py` | 115 | FK OpenArm v1.0 từ JSON sinh từ URDF |
-| `openarm_shadow/filtering/joint.py` | 197 | `OneEuro`, `JointFilter`, `EMA`, `ArmShape`, `PointKalman` |
-| `openarm_shadow/retarget/grip.py` | 86 | Tỉ số ngón cái–trỏ → độ mở kẹp (liên tục / theo mức), hiệu chuẩn theo người |
-| `openarm_shadow/safety/gate.py` | 234 | `SafetyGate` |
-| `openarm_shadow/robot/openarm_can_robot.py` | 326 | Backend CAN thật |
-| `openarm_shadow/robot/sim.py` | 30 | Robot lý tưởng: đo = lệnh |
-| `openarm_shadow/robot/gravity.py` | 31 | Bù trọng lực Pinocchio (tắt, chưa kiểm chứng) |
-| `openarm_shadow/cameras/calibration.py` | 128 | ChArUco: tư thế bảng, ngoại tham số tương đối, nội tham số webcam, đo trễ giữa camera |
-| `openarm_shadow/viz/draw.py` | 145 | Vẽ khung xương lên ảnh, hình que robot hai góc nhìn |
 
 ---
 

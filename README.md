@@ -78,7 +78,10 @@ python scripts/shadow.py --source multi --arms right --config config/fusion_2cam
 python scripts/offline_retarget.py demo.mp4 -o demo.npz --show
 python scripts/replay_npz.py demo.npz            # xem lại trên robot mô phỏng
 
-# 3) OpenArm thật (làm theo docs/SAFETY.md)
+# 3) OpenArm thật qua backend ROS 2 của nhóm kia (docs/ROS2.md): ta chỉ gửi lệnh khớp
+python scripts/shadow.py --robot ros2 --dry-run                     # chỉ đọc /openarm/joint_states
+
+# 4) OpenArm thật, CAN trực tiếp (làm theo docs/SAFETY.md)
 python scripts/shadow.py --robot openarm --dry-run                  # motor TẮT: chỉ đọc, kiểm tra chiều khớp
 python scripts/shadow.py --robot openarm --arms right --config config/first_real.yaml   # lần đầu: J1–J4, chậm
 python scripts/shadow.py --robot openarm --arms right --config config/d455_wrist_real.yaml # sau khi xác minh J5–J7
@@ -133,7 +136,7 @@ openarm_shadow/              thư viện, mỗi package con một nhiệm vụ:
   filtering/                 One Euro + xác nhận bước nhảy theo khớp; EMA / Kalman / độ dài xương trên điểm 3D
   retarget/                  retarget hướng kiểu SEW-Mimic, kẹp, pipeline quan sát -> mục tiêu khớp
   safety/                    SafetyGate
-  robot/                     robot mô phỏng, OpenArm qua CAN-FD, bù trọng lực
+  robot/                     robot mô phỏng, OpenArm qua CAN-FD, backend OpenArm qua ROS 2, bù trọng lực
   runtime/                   vòng chạy chính, luồng điều khiển, luồng perception, tự engage, ghi --record
   viz/                       vẽ khung xương / robot, dòng chữ chẩn đoán
 scripts/demo_sim.py          mô phỏng không cần camera (người giả lập)
@@ -152,11 +155,13 @@ scripts/calibrate_cameras.py hiệu chuẩn ngoại tham số nhiều camera -> 
 scripts/measure_camera_latency.py độ trễ tương đối giữa các camera -> fusion.cameras[i].latency_s
 scripts/record_multicam_raw.py ghi ảnh + depth thô mọi camera (không bật motor)
 scripts/replay_raw.py        chạy lại perception + fusion + pipeline trên dữ liệu thô; --compare để kiểm tra hồi quy
+ros2/openarm_shadow_ros/     package ROS 2 (node teleop + launch): nhận joint_states, phát lệnh khớp + kẹp
 tools/bringup/               script bật CAN, đọc khớp, lắc J7 (bring-up robot)
 tests/                       pytest
 docs/README.md               mục lục tài liệu + lộ trình
 docs/01..07_*.md             phân tích đề tài, OpenArm v1.0, bring-up, dữ liệu, 2 bài báo, tham khảo
 docs/SAFETY.md, DESIGN.md    checklist an toàn, thiết kế code
 docs/FUSION.md               fusion 2 camera: đặt camera, hiệu chuẩn, chạy, đọc màn hình, giới hạn
+docs/ROS2.md                 chạy như package ROS 2 với backend OpenArm (thay teleop Meta Quest)
 docs/research/               phân tích 5 repo, bản dịch SEW-Mimic và Hand Shadowing
 ```
