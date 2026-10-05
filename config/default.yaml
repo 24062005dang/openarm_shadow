@@ -211,10 +211,11 @@ safety:
     velocity_smoothing: 0.5  # EMA vận tốc ước lượng giữa 2 khung camera (nhiễu ở 15 fps)
     min_step_deg: 1.0        # đổi < 1° giữa 2 khung coi như đứng yên (không ngoại suy, không feedforward)
     max_acc_deg_s2: [300, 300, 400, 400, 1500, 1500, 1500]
-  # Giới hạn khớp mềm theo góc URDF. Mặc định = giới hạn của LeRobot openarm_follower (bảo thủ).
+  # Giới hạn khớp mềm theo góc URDF. Mặc định = LeRobot openarm_follower (bảo thủ), riêng J2 = giới hạn URDF/ROS (phải -10..190°,
+  # trái -190..10°). Robot thật: motor_limits_deg bên dưới vẫn kẹp J2 ở 90° (config chạy thật cũng ghi đè giới hạn mềm).
   soft_limits_deg:
-    right: [[-75, 75], [-9, 90], [-85, 85], [0, 135], [-85, 85], [-40, 40], [-80, 80]]
-    left:  [[-75, 75], [-90, 9], [-85, 85], [0, 135], [-85, 85], [-40, 40], [-80, 80]]
+    right: [[-75, 75], [-9, 190], [-85, 85], [0, 135], [-85, 85], [-40, 40], [-80, 80]]
+    left:  [[-75, 75], [-190, 9], [-85, 85], [0, 135], [-85, 85], [-40, 40], [-80, 80]]
   self_collision:
     enabled: true
     margin_m: 0.03

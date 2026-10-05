@@ -169,7 +169,7 @@ limitations under the License.
           <body name="openarm_left_link2" pos="-0.0301 0.0 0.06"
             quat="0.7071067811882787 -0.7071067811848163 0.0 0.0">
             <joint name="openarm_left_joint2" type="hinge" ref="0.0" class="motor_DM8009"
-              range="-1.5708 0.17453267320510335" axis="-1 0 0" />
+              range="-3.3161253267948965 0.17453267320510335" axis="-1 0 0" />
             <inertial pos="0.00839629182351943 -2.0145102027597523e-08 0.03256649300522363"
               quat="1.0 0.0 0.0 0.0" mass="0.2775092746011571"
               diaginertia="0.000359 0.000376 0.000232" />
@@ -349,7 +349,7 @@ limitations under the License.
           <body name="openarm_right_link2" pos="-0.0301 0.0 0.06"
             quat="0.7071067811882787 0.7071067811848163 0.0 0.0">
             <joint name="openarm_right_joint2" type="hinge" ref="0.0" class="motor_DM8009"
-              range="-0.17453267320510335 1.5708" axis="-1 0 0" />
+              range="-0.17453267320510335 3.3161253267948965" axis="-1 0 0" />
             <inertial pos="0.00839629182351943 -2.0145102027597523e-08 0.03256649300522363"
               quat="1.0 0.0 0.0 0.0" mass="0.2775092746011571"
               diaginertia="0.000359 0.000376 0.000232" />
@@ -535,7 +535,7 @@ limitations under the License.
 
   <actuator>
     <position name="left_joint1_ctrl" joint="openarm_left_joint1" class="motor_DM8009" kp="70" kv="2.75" forcelimited="true" forcerange="-40 40" ctrlrange="-3.49066 1.39626" />
-    <position name="left_joint2_ctrl" joint="openarm_left_joint2" class="motor_DM8009" kp="70" kv="2.50" forcelimited="true" forcerange="-40 40" ctrlrange="-1.5708 0.17453" />
+    <position name="left_joint2_ctrl" joint="openarm_left_joint2" class="motor_DM8009" kp="70" kv="2.50" forcelimited="true" forcerange="-40 40" ctrlrange="-3.3161 0.17453" />
     <position name="left_joint3_ctrl" joint="openarm_left_joint3" class="motor_DM4340" kp="70" kv="2.00" forcelimited="true" forcerange="-27 27" ctrlrange="-1.5708 1.5708" />
     <position name="left_joint4_ctrl" joint="openarm_left_joint4" class="motor_DM4340" kp="60" kv="2.00" forcelimited="true" forcerange="-27 27" ctrlrange="-0.10 2.25" />
     <position name="left_joint5_ctrl" joint="openarm_left_joint5" class="motor_DM4310" kp="10" kv="0.70" forcelimited="true" forcerange="-7 7" ctrlrange="-1.50 1.50" />
@@ -543,7 +543,7 @@ limitations under the License.
     <position name="left_joint7_ctrl" joint="openarm_left_joint7" class="motor_DM4310" kp="10" kv="0.50" forcelimited="true" forcerange="-7 7" ctrlrange="-1.52 1.52" />
     <position name="left_finger1_ctrl" joint="openarm_left_finger_joint1" class="motor_finger" kp="80" kv="1.0" ctrlrange="0 0.044" />
     <position name="right_joint1_ctrl" joint="openarm_right_joint1" class="motor_DM8009" kp="70" kv="2.75" forcelimited="true" forcerange="-40 40" ctrlrange="-1.39626 3.49066" />
-    <position name="right_joint2_ctrl" joint="openarm_right_joint2" class="motor_DM8009" kp="70" kv="2.50" forcelimited="true" forcerange="-40 40" ctrlrange="-0.17453 1.5708" />
+    <position name="right_joint2_ctrl" joint="openarm_right_joint2" class="motor_DM8009" kp="70" kv="2.50" forcelimited="true" forcerange="-40 40" ctrlrange="-0.17453 3.3161" />
     <position name="right_joint3_ctrl" joint="openarm_right_joint3" class="motor_DM4340" kp="70" kv="2.00" forcelimited="true" forcerange="-27 27" ctrlrange="-1.5708 1.5708" />
     <position name="right_joint4_ctrl" joint="openarm_right_joint4" class="motor_DM4340" kp="60" kv="2.00" forcelimited="true" forcerange="-27 27" ctrlrange="-0.11 2.30" />
     <position name="right_joint5_ctrl" joint="openarm_right_joint5" class="motor_DM4310" kp="10" kv="0.70" forcelimited="true" forcerange="-7 7" ctrlrange="-1.52 1.52" />
