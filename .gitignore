@@ -3,6 +3,9 @@ __pycache__/
 models/
 *.npz
 *.mp4
+*.avi
+*.raw
+data/*_raw_*/
 .pytest_cache/
 external/librealsense/
 # Sinh ra khi chạy (riêng từng máy / từng lần chạy)
