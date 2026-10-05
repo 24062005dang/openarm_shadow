@@ -19,14 +19,20 @@ class Controller(threading.Thread):
 
     def run(self):
         t_prev = time.monotonic()
+        follows = bool(getattr(self.robot, "follows_measured", False))
         try:
             while self.running:
                 now = time.monotonic()
                 with self.lock:
+                    if follows and not self.gate.engaged:
+                        self.gate.sync(self.robot.read())     # robot do backend giữ: lệnh bám theo góc đo
                     cmd = self.gate.step(now - t_prev, now)
                     self.cmd = {s: v.copy() for s, v in cmd.items()}
                     dq = None if self.gate.dq is None else {s: v.copy() for s, v in self.gate.dq.items()}
+                    engaged = self.gate.engaged
                 t_prev = now
+                if follows:
+                    self.robot.set_engaged(engaged)           # chỉ phát lệnh khi đang engage
                 if dq is not None:
                     self.robot.send(self.cmd, dq)
                 else:
@@ -58,6 +64,8 @@ def park(robot, gate, rest, vel_deg_s, timeout=25.0):
     gate.engage(time.monotonic() - 10)     # bỏ qua pha tăng tốc
     if hasattr(robot, "returning"):
         robot.returning = True             # đang về: số đọc rác chỉ bị bỏ qua, không dừng giữa chừng
+    if hasattr(robot, "set_engaged"):
+        robot.set_engaged(True)            # backend ROS 2: được phát lệnh trong lúc về nghỉ
     try:
         t0 = t_prev = time.monotonic()
         while time.monotonic() - t0 < timeout:
@@ -73,5 +81,7 @@ def park(robot, gate, rest, vel_deg_s, timeout=25.0):
     finally:
         if hasattr(robot, "returning"):
             robot.returning = False
+        if hasattr(robot, "set_engaged"):
+            robot.set_engaged(False)
         gate.max_vel = saved
         gate.disengage()

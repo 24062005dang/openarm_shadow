@@ -240,3 +240,30 @@ robot:
     urdf: null            # đường dẫn tới openarm_description/.../openarm_v1.0/urdf/example/v1.urdf
   rest_pose_deg: [0, 0, 0, 0, 0, 0, 0]   # tư thế nghỉ (tay thả xuôi) để về trước khi tắt
   park_vel_deg_s: 20
+
+# Backend OpenArm qua ROS 2 (--robot ros2, docs/ROS2.md). Ta chỉ gửi lệnh khớp; motor/CAN là việc của backend
+# (repo hoanglmv/openarm_can nhánh hoang1). Backend giữ mục tiêu cuối khi không có lệnh mới, tự giới hạn tốc độ
+# (mặc định 0,25 rad/s, chỉnh trên web UI của họ) và kẹp theo JOINT_LIMITS của họ.
+ros2:
+  node_name: openarm_shadow_teleop
+  joint_states_topic: /openarm/joint_states            # sensor_msgs/JointState, 16 tên, rad / m
+  arm_command_topic: /openarm/teleop/joint_commands     # Float64MultiArray, 14 số: left_j1..j7, right_j1..j7
+  left_gripper_topic: /openarm/teleop/left_gripper      # Float64MultiArray, data[0] = hành trình kẹp (m)
+  right_gripper_topic: /openarm/teleop/right_gripper
+  connect_timeout_s: 5.0       # chờ joint_states đầu tiên
+  state_timeout_s: 0.5         # đang engage mà joint_states cũ hơn mức này -> dừng gửi, thoát
+  limit_tol_deg: 5             # góc đo ngoài safety.soft_limits_deg quá mức này -> không cho gửi lệnh
+  gripper:
+    enabled: true
+    stroke_max_m: 0.043        # độ mở 1 (xoè) = 43 mm, 0 (chụm) = đóng
+    # Số mức kẹp gửi đi (đều nhau, gồm cả đóng hẳn và mở hẳn): 10 -> 0; 4,78; 9,56; ...; 43 mm. null = liên tục.
+    # Làm tròn ngay trước khi phát (sau lọc và giới hạn tốc độ kẹp) nên backend chỉ nhận đúng các mức này.
+    levels: 10
+    level_hysteresis: 0.3      # đổi mức khi lệch quá (0,5 + 0,3) bước khỏi mức hiện tại: không nhảy qua lại ở ranh giới
+    min_change_m: 0.0005       # chỉ gửi khi đổi >= 0,5 mm (backend in log mỗi lệnh kẹp)...
+    keepalive_s: 0.5           # ...hoặc mỗi 0,5 s
+  # Góc gửi/nhận = sign * góc URDF + offset. Mặc định đồng nhất: backend dùng URDF chính thức, góc khớp = góc
+  # motor thô. Chỉ đổi khi đo thấy lệch (ros2 topic echo khi tay thả xuôi phải ra ~0, docs/ROS2.md).
+  urdf_to_ros:
+    right: {sign: [1, 1, 1, 1, 1, 1, 1], offset_deg: [0, 0, 0, 0, 0, 0, 0]}
+    left:  {sign: [1, 1, 1, 1, 1, 1, 1], offset_deg: [0, 0, 0, 0, 0, 0, 0]}

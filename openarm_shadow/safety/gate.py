@@ -75,6 +75,14 @@ class SafetyGate:
         self.engaged = False
         self._stop()
 
+    def sync(self, q_meas: dict):
+        """Khi chưa engage: lệnh = tư thế đo (robot do nơi khác điều khiển hoặc bị đẩy tay, vd backend ROS 2), để lúc
+        engage lệnh bắt đầu đúng tư thế thật. Tay nào không có số đo thì giữ lệnh cũ."""
+        for s in self.sides:
+            if s in q_meas:
+                self.cmd[s] = np.asarray(q_meas[s], float).copy()
+        self._stop()
+
     def engage(self, now):
         self.engaged, self.t_engage = True, now
 

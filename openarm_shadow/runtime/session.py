@@ -17,7 +17,8 @@ class AutoEngage:
     @classmethod
     def from_config(cls, cfg, robot_kind):
         hc = cfg.get("calibration", {}).get("hand_auto", {})
-        return cls(hc.get("auto_engage_real_s" if robot_kind == "openarm" else "auto_engage_sim_s", None))
+        from ..robot import REAL_KINDS
+        return cls(hc.get("auto_engage_real_s" if robot_kind in REAL_KINDS else "auto_engage_sim_s", None))
 
     @property
     def enabled(self):

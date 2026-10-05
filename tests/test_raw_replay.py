@@ -96,3 +96,15 @@ def test_auto_engage_off_and_manual_override():
     a.update(True, False, 0.0)
     a.manual()                                                          # bấm SPACE: thôi tự engage
     assert a.countdown is None and not a.update(True, False, 5.0)
+
+
+def test_app_replay_source_uses_recording_calibration(recording):
+    from openarm_shadow.runtime.app import open_replay
+    (recording / "cameras_calib.yaml").write_text("cameras: {}\n")
+    cfg = {"fusion": {"cameras": [{"name": "front"}, {"name": "side", "latency_s": 0.0}], "calib_file": "x.yaml",
+                      "max_skew_s": 0.04},
+           "replay": {"max_frames": 3}}
+    src = open_replay(cfg, str(recording))
+    assert cfg["fusion"]["calib_file"].endswith("cameras_calib.yaml")
+    assert len(read_all(src)) == 3
+    src.close()

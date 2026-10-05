@@ -21,7 +21,7 @@ from ..cameras.sources import open_source
 from ..fusion.multiview import MultiViewPerception
 from ..perception.landmarker import Perception
 from ..retarget.pipeline import ShadowPipeline
-from ..robot import make_robot
+from ..robot import REAL_KINDS, make_robot
 from ..safety.gate import SafetyGate
 from ..viz.draw import compose_view, draw_human, draw_robot, put_lines
 from ..viz.hud import draw_ready_badge, status_lines
@@ -31,12 +31,30 @@ from .session import AutoEngage
 from .worker import PerceptionWorker
 
 
+def open_replay(cfg, root):
+    """Nguồn "replay:<thư mục>": phát lại dữ liệu thô (scripts/record_multicam_raw.py) thay cho camera, theo thứ tự
+    fusion.cameras. Hiệu chuẩn camera lấy từ cameras_calib.yaml trong thư mục ghi (nếu có). Tuỳ chọn trong
+    cfg["replay"]: intrinsics (file nội tham số RealSense nếu thư mục ghi không có intrinsics.yaml), start_s, max_frames,
+    stride. Không giữ nhịp thời gian thực: chạy nhanh nhất perception cho phép."""
+    from pathlib import Path
+    from ..cameras.raw_replay import RawReplaySource, load_intrinsics
+    root = Path(root).expanduser()
+    fc, rc = cfg["fusion"], cfg.get("replay") or {}
+    if (root / "cameras_calib.yaml").is_file():
+        fc["calib_file"] = str((root / "cameras_calib.yaml").resolve())
+    intr = load_intrinsics(rc["intrinsics"]) if rc.get("intrinsics") else None
+    return RawReplaySource(root, [c["name"] for c in fc["cameras"]], [float(c.get("latency_s", 0.0)) for c in fc["cameras"]],
+                           float(fc.get("max_skew_s", 0.04)), intr, float(rc.get("start_s", 0.0)),
+                           rc.get("max_frames"), int(rc.get("stride", 1)))
+
+
 def open_perception(cfg, source):
     """Mở nguồn ảnh và bộ nhận diện. source "multi": nhiều camera (fusion.cameras), hợp nhất bằng triangulation;
-    khác: một camera (RealSense, chỉ số webcam, file video, URL). -> (cap, perc, process, multi);
-    process(sample) -> (Frame, extra) chạy trong luồng perception."""
-    if str(source).lower() == "multi":
-        cap = MultiCameraSource(cfg)
+    "replay:<thư mục>": như multi nhưng phát lại dữ liệu thô đã ghi; khác: một camera (RealSense, chỉ số webcam,
+    file video, URL). -> (cap, perc, process, multi); process(sample) -> (Frame, extra) chạy trong luồng perception."""
+    src = str(source)
+    if src.lower() == "multi" or src.startswith("replay:"):
+        cap = open_replay(cfg, src[len("replay:"):]) if src.startswith("replay:") else MultiCameraSource(cfg)
         ok, first = cap.read(timeout=10.0)     # RealSense vừa mở có lúc cần > 3 s mới ra khung đầu
         if not ok:
             cap.close()
@@ -64,18 +82,20 @@ def open_perception(cfg, source):
     return cap, perc, process, False
 
 
-def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
-    """dry_run (chỉ với robot_kind="openarm"): đọc góc robot thật, KHÔNG bật motor. Lệnh đi vào robot mô phỏng;
-    hình vẽ có thêm nét xanh lá = tư thế đo từ robot thật. Dùng để kiểm tra can0/can1 và chiều từng khớp
-    bằng cách cầm tay robot di chuyển, trước khi chạy thật."""
+def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False, confirm=True):
+    """robot_kind: "sim", "openarm" (CAN trực tiếp) hoặc "ros2" (gửi lệnh khớp cho backend OpenArm qua ROS 2).
+
+    dry_run (robot thật): đọc góc robot thật, KHÔNG bật motor / KHÔNG gửi lệnh. Lệnh đi vào robot mô phỏng; hình vẽ
+    có thêm nét xanh lá = tư thế đo từ robot thật. Dùng để kiểm tra chiều từng khớp và quy ước góc trước khi chạy thật.
+    confirm=False: không hỏi 'yes' trước khi bắt đầu (chạy từ launch file không có bàn phím terminal)."""
     cap, perc, process, multi = open_perception(cfg, source)
     robot = real = ctl = gate = worker = rec = None
     # Mọi thứ sau khi mở camera nằm trong try: lỗi ở bất kỳ bước nào (kể cả ngay sau khi bật motor) vẫn
     # về tư thế nghỉ và tắt motor, đóng camera.
     try:
         pipe = ShadowPipeline(cfg)
-        if robot_kind == "openarm" and dry_run:
-            real = make_robot("openarm", cfg, pipe.robot_sides)
+        if robot_kind in REAL_KINDS and dry_run:
+            real = make_robot(robot_kind, cfg, pipe.robot_sides)
             q_meas = real.connect()
             from ..robot.sim import SimRobot
             robot = SimRobot(pipe.robot_sides, q0=q_meas)
@@ -90,9 +110,10 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
         gate.reset(q_meas)
         pipe.seed(q_meas)
 
-        if robot_kind == "openarm":
+        if robot_kind in REAL_KINDS:
             print("\nROBOT THẬT. Kiểm tra: E-stop trong tay, không ai trong tầm với, tay đang thả xuôi.")
-            if input("Gõ 'yes' để bật motor: ").strip().lower() != "yes":
+            what = "bật motor" if robot_kind == "openarm" else "cho phép gửi lệnh (chỉ gửi sau khi engage)"
+            if confirm and input(f"Gõ 'yes' để {what}: ").strip().lower() != "yes":
                 raise SystemExit("Huỷ.")
             robot.enable()
 
@@ -106,7 +127,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
         auto = AutoEngage.from_config(cfg, robot_kind)
         msg = auto.hint() + "SPACE: dung/chay thu cong | c: calib lai | g: calib kep | p: ve nghi | q: thoat"
         if real is not None:
-            msg = "DRY RUN: motor TAT. Xanh la = robot that. " + msg
+            msg = "DRY RUN: khong gui lenh. Xanh la = robot that. " + msg
         disp = cfg.get("display", {}) or {}
         display_period = 1.0 / max(0.1, float(disp.get("update_hz", 30.0)))
         last_display_t = -float("inf")
@@ -133,7 +154,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                 with ctl.lock:
                     gate.engage(now)
                 engaged = True
-                kind_text = "Robot thật" if robot_kind == "openarm" else "Simulation"
+                kind_text = "Robot thật" if robot_kind in REAL_KINDS else "Simulation"
                 print(kind_text, "tự đồng bộ sau khi READY liên tục đủ", auto.hold_s, "giây")
             targets = pipe.step(fr)
             for s, res in pipe.grip_calibration_results():
@@ -171,7 +192,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                     for s in pipe.robot_sides:
                         lines.append(f"{s} that (URDF, do): " +
                                      " ".join(f"{v:5.0f}" for v in np.rad2deg(q_real[s][:7])))
-                elif robot_kind == "openarm":
+                elif robot_kind in REAL_KINDS:
                     q_real = robot.read()
                 put_lines(cam, lines)
                 title = "lenh (dam) / muc tieu (mo)" + (" / do that (xanh la)" if q_real else "")

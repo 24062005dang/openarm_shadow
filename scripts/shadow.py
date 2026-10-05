@@ -6,45 +6,15 @@
     python scripts/shadow.py --source multi --config config/fusion_2cam.yaml   # 2 camera, fusion
     python scripts/shadow.py --robot openarm --dry-run   # đọc robot thật, motor TẮT (kiểm tra chiều khớp)
     python scripts/shadow.py --robot openarm --config config/first_real.yaml --arms right   # lần chạy thật đầu
+    python scripts/shadow.py --robot ros2 --dry-run      # backend OpenArm qua ROS 2: chỉ đọc joint_states
     python scripts/shadow.py --config my.yaml --record run1.npz
 """
-import argparse
-import os
 import sys
 from pathlib import Path
 
-os.environ.setdefault("GLOG_minloglevel", "2")   # ẩn log INFO/WARNING của MediaPipe để thấy thông báo thật
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from openarm_shadow.runtime import run
-from openarm_shadow.config import load_config
-
-
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--source", default=None, help="realsense (mặc định), multi (nhiều camera, fusion.cameras), chỉ số webcam (vd 0), file video hoặc URL")
-    ap.add_argument("--robot", choices=["sim", "openarm"], default="sim")
-    ap.add_argument("--config", action="append", default=None,
-                    help="file config ghi đè default.yaml; dùng nhiều lần để ghép, file sau thắng")
-    ap.add_argument("--mode", choices=["direct", "mirror"], default=None)
-    ap.add_argument("--arms", default=None, help="vd: right hoặc right,left")
-    ap.add_argument("--record", default=None, help="lưu mục tiêu + lệnh ra file .npz")
-    ap.add_argument("--dry-run", action="store_true", help="với --robot openarm: chỉ đọc góc, không bật motor")
-    args = ap.parse_args()
-    cfg = load_config(args.config)
-    if args.mode:
-        cfg["mapping"]["mode"] = args.mode
-    if args.arms:
-        cfg["mapping"]["robot_arms"] = args.arms.split(",")
-    if args.source is not None:
-        # Nguồn chọn tay trên dòng lệnh thắng yêu cầu D455 trong config (vd --source 0 = webcam laptop).
-        cfg["camera"]["required_source"] = None
-    src = args.source if args.source is not None else cfg["camera"]["index"]
-    if args.dry_run and args.robot != "openarm":
-        raise SystemExit("--dry-run chỉ dùng cùng --robot openarm")
-    run(cfg, src, args.robot, record=args.record, dry_run=args.dry_run)
-
+from openarm_shadow.runtime.cli import main  # noqa: E402
 
 if __name__ == "__main__":
     main()
