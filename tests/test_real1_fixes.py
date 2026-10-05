@@ -2,7 +2,7 @@
 import numpy as np
 
 from openarm_shadow.config import load_config
-from openarm_shadow.filters import JointFilter
+from openarm_shadow.filtering import JointFilter
 from openarm_shadow.multiview import err_conf_factor
 from openarm_shadow.pipeline import ShadowPipeline
 from test_pipeline import fake_frame

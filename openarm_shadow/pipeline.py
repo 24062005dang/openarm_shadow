@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .filters import EMA, ArmShape, JointFilter, PointKalman
+from .filtering import EMA, ArmShape, JointFilter, PointKalman
 from .grip import GripMapper
 from .core.geometry import angle_between, orthonormalize, unit
 from .core.kinematics import ArmKinematics

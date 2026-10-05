@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from openarm_shadow.filters import JointFilter, OneEuro
+from openarm_shadow.filtering import JointFilter, OneEuro
 from openarm_shadow.core.geometry import make_frame, rot, seg_seg_distance, sp1, sp2, unit
 from openarm_shadow.core.kinematics import ArmKinematics
 from openarm_shadow.retarget import ArmRetargeter, mirror_rotation, mirror_vector
@@ -291,7 +291,7 @@ def test_gate_deadman_when_only_held_targets_arrive():
 
 
 def test_grip_filter_uses_grip_units():
-    from openarm_shadow.filters import JointFilter
+    from openarm_shadow.filtering import JointFilter
     f = JointFilter(2, 1.0, 0.0, [1.0, 0.05], [35, 35], 0.2, 0.5, angular=[True, False])
     assert f.dead[1] == 0.05 and f.jump[1] == 35
     f(np.array([0.0, 0.0]), np.ones(2), 0.0)
