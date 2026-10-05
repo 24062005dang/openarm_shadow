@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>openarm_shadow_ros</name>
+  <version>0.1.0</version>
+  <description>Teleop OpenArm bằng camera (openarm_shadow): nhận /openarm/joint_states, phát
+    /openarm/teleop/joint_commands, /openarm/teleop/left_gripper, /openarm/teleop/right_gripper.</description>
+  <maintainer email="tominhducsp17@gmail.com">To Minh Duc</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <!-- Thư viện openarm_shadow (MediaPipe, pyrealsense2) cài bằng pip: xem docs/ROS2.md -->
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
