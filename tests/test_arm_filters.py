@@ -82,3 +82,44 @@ def test_kalman_low_confidence_trusts_prediction_and_resets_after_gap():
     assert x[0, 0] < 0.02
     x = kf(np.array([[0.2, 0, 0]]), 2.0)                 # mất điểm > max_gap_s: nhận điểm mới ngay
     assert np.isclose(x[0, 0], 0.2)
+
+
+def test_kalman_per_point_confidence():
+    rng = np.random.default_rng(2)
+    meas = [rng.normal(0, 0.01, (3, 3)) for _ in range(40)]
+    a, b = PointKalman(), PointKalman()
+    for k, m in enumerate(meas):                         # mảng độ tin cậy bằng nhau = một số chung (như trước)
+        assert np.allclose(a(m, k / 30, 0.7), b(m, k / 30, [0.7, 0.7, 0.7]))
+    kf = PointKalman(q=6.0, r=0.015)
+    for k in range(30):
+        kf(np.zeros((3, 3)), k / 30)
+    jump = np.zeros((3, 3))
+    jump[:, 0] = 0.2                                     # cả 3 điểm vọt 20 cm, chỉ cổ tay nhìn kém
+    x = kf(jump, 1.0, conf=[1.0, 1.0, 0.05])
+    assert x[0, 0] > 0.1 and x[1, 0] > 0.1               # vai, khuỷu nhìn rõ: bám đo
+    assert x[2, 0] < 0.02                                # cổ tay nhìn kém: tin dự đoán
+
+
+def test_pipeline_kalman_uses_per_point_confidence():
+    cfg = load_config()
+    cfg["mapping"]["robot_arms"] = ["right"]
+    cfg["filter"]["landmark_kalman"] = {"enabled": True}
+    q = {"right": np.deg2rad([20, 20, 0, 60, 0, 0, 0])}
+
+    def wrist_after_jump(points_conf):
+        pipe = ShadowPipeline(cfg)
+        pipe.seed({"right": np.zeros(8)})
+        for i in range(30):
+            fr = fake_frame(pipe, q, i / 15)
+            fr.arms["right"].conf["points"] = (0.95, 0.95, 0.95)
+            pipe.step(fr)
+        fr = fake_frame(pipe, q, 2.0)
+        ob = fr.arms["right"]
+        w0 = ob.w.copy()
+        ob.w = ob.w + [0.1, 0.0, 0.0]                    # cổ tay đo vọt 10 cm
+        ob.conf["points"] = points_conf
+        pipe.step(fr)
+        return np.linalg.norm(pipe.lm_kf["right"].x[2] - w0)
+
+    assert wrist_after_jump((0.95, 0.95, 0.95)) > 0.05  # cổ tay nhìn rõ: Kalman nhận bước nhảy
+    assert wrist_after_jump((0.95, 0.95, 0.05)) < 0.01  # vai/khuỷu rõ nhưng cổ tay kém: không tin điểm cổ tay

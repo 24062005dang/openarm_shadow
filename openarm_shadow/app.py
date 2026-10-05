@@ -5,7 +5,8 @@ Hai luồng:
 - luồng điều khiển: chạy đều `control_hz`, bước SafetyGate (giới hạn vận tốc, dead-man, va chạm)
   rồi gửi lệnh xuống robot.
 
-Phím: SPACE = engage / nhả (ly hợp) · c = hiệu chuẩn hướng bàn tay trung tính · p = về tư thế nghỉ
+Phím: SPACE = engage / nhả (ly hợp) · c = hiệu chuẩn hướng bàn tay trung tính · b = học lại khung thân
+      (orientation.body_ref) · p = về tư thế nghỉ
       q hoặc ESC = về tư thế nghỉ rồi thoát.
 """
 from __future__ import annotations
@@ -269,9 +270,10 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
         ready_since = None
         auto_engage_used = False
         auto_countdown = None
-        msg = ("GIU READY 3s: tu dong sync | SPACE: dung/chay thu cong | c: calib lai | g: calib kep | q: thoat"
-               if robot_kind == "sim" else
-               "SPACE: engage | c: hieu chuan tay | g: calib kep | p: ve nghi | q: thoat")
+        msg = ("GIU READY 3s: tu dong sync | SPACE: dung/chay thu cong | c: calib lai | b: hoc lai than | g: calib kep"
+               " | q: thoat"
+               if simulated else
+               "SPACE: engage | c: hieu chuan tay | b: hoc lai than | g: calib kep | p: ve nghi | q: thoat")
         if real is not None:
             msg = "DRY RUN: motor TAT. Xanh la = robot that. " + msg
         disp = cfg.get("display", {}) or {}
@@ -298,7 +300,9 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
             auto_done = [] if engaged else pipe.auto_calibrate_hand_neutral(fr)
             if auto_done:
                 print("Tự động hiệu chuẩn tay trung tính cho:", auto_done)
-            ready_live = all(pipe.hand_calibrated[s] and pipe.calib_ready_now[s] for s in pipe.robot_sides)
+            # Tham chiếu thân (orientation.body_ref) phải học xong trước: hiệu chuẩn tay và retarget đều theo khung thân
+            ready_live = perc.body_ready() and all(pipe.hand_calibrated[s] and pipe.calib_ready_now[s]
+                                                   for s in pipe.robot_sides)
             now = time.monotonic()
             if simulated and not engaged and not auto_engage_used:
                 if ready_live:
@@ -341,9 +345,14 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                 if multi:
                     cam = perc.draw(sample, fr, view_frames=extra[0], world=extra[1])
                 else:
-                    cam = draw_human(frame_bgr.copy(), fr)
+                    ref = getattr(perc, "body_ref", None)
+                    est = bool(ref is not None and ref.ready and ref.weights.get("R", 1.0) < 0.5)
+                    cam = draw_human(frame_bgr.copy(), fr, torso_estimated=est)
                     if cfg["camera"]["mirror_display"]:
                         cam = cv2.flip(cam, 1)
+                    if est:                          # sau khi lật: chữ không bị ngược
+                        put_lines(cam, ["THAN: dung huong tham chieu (bi che)"], org=(10, cam.shape[0] - 40),
+                                  color=(0, 140, 255))
                 ready = ready_live
                 cx, cy = cam.shape[1] - 28, 28
                 if ready and not engaged:
@@ -385,6 +394,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                               f"{s}:{100 * pipe.calib_progress[s]:.0f}% [{pipe.calib_hint[s]}]"
                               for s in pipe.robot_sides)
                 lines.append("Auto calib tay: " + cs)
+                lines.append(perc.body_status())
                 for s in pipe.robot_sides:
                     inf = pipe.last_info.get(s)
                     if inf is not None:
@@ -436,6 +446,9 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                             # thể lệch tới 180° -> cổ tay chạy thẳng tới giới hạn khi engage. Không cho engage.
                             print("CHƯA ENGAGE: chưa hiệu chuẩn bàn tay cho", blocked,
                                   "- thả tay xuôi, xoè bàn tay, lòng bàn tay nhìn camera, đứng yên tới khi READY.")
+                        elif not perc.body_ready():
+                            print("CHƯA ENGAGE: chưa học tham chiếu thân -", perc.body_status(),
+                                  "- đứng thẳng, thả tay xuôi cho camera thấy rõ vai và hông.")
                         else:
                             q_now = robot.read()
                             pipe.seed(q_now)
@@ -447,6 +460,17 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                     else:
                         print("Hiệu chuẩn tay trung tính cho:",
                               pipe.calibrate_hand_neutral(fr) or "không thấy bàn tay")
+                elif k == ord("b"):
+                    if gate.engaged:
+                        print("Nhả robot (SPACE) trước khi học lại khung thân.")
+                    else:
+                        # Hướng tay trung tính đã hiệu chuẩn theo khung thân cũ -> hiệu chuẩn lại cùng lúc (tự động
+                        # khi thả tay xuôi, cùng tư thế dùng để học khung thân).
+                        perc.relearn_body()
+                        for s in pipe.robot_sides:
+                            pipe.hand_calibrated[s] = False
+                            pipe._reset_auto_calib(s)
+                        print("Học lại khung thân + hiệu chuẩn tay: đứng thẳng, thả tay xuôi, xoè bàn tay, đứng yên.")
                 elif k == ord("g"):
                     pipe.start_grip_calibration(fr.t)
                     print(f"Hiệu chuẩn kẹp {pipe.grip[pipe.robot_sides[0]].calib_s:.0f} s: chụm ngón cái-trỏ hết cỡ "

@@ -45,6 +45,20 @@ orientation:
   min_open_fingers: 3        # chỉ cập nhật hướng khi bàn tay xòe
   body_smoothing: 0.35       # giữ body frame liên tục khi vai/hông depth chập chờn
   body_max_jump_deg: 45
+  # Tham chiếu thân (perception.BodyRef): người đứng gần như yên, chỉ tay cử động. Học tham chiếu thân 1 lần (learn_s
+  # giây thấy rõ 2 vai, đứng yên). Sau đó so điểm đo với tham chiếu (lọc theo ĐỘ NHẤT QUÁN, không theo độ tin cậy:
+  # tay che thân thì MediaPipe vẫn báo vai/hông "thấy rõ" nhưng đặt sai chỗ):
+  #   lệch < tol[0]: dùng điểm đo, tham chiếu trôi chậm theo (follow/khung) -> giữ chuyển động thật nhỏ
+  #   lệch > tol[1]: coi là bị che, dùng tham chiếu; ở giữa trộn tuyến tính
+  #   mọi điểm cùng lệch như một khối cứng (khoảng cách đôi một đổi < rigid_tol_m) liên tục adopt_s: người xoay /
+  #   dịch thật -> nhận vị trí mới.
+  # Fusion triangulate: lọc từng điểm vai (shoulder_tol_m) / hông (hip_tol_m, chặt hơn: hông dễ bị tay che nhất).
+  # 1 camera: chỉ lọc hướng khung thân (rot_tol_deg), lệch lớn kéo dài 2 x adopt_s mới nhận hướng mới.
+  # Học lại: phím b, hoặc mất người lâu hơn relearn_lost_s. Chưa học xong thì chưa READY/engage.
+  # Tắt (enabled: false) = dò khung thân mỗi khung như trước. require_hips: true = chỉ học khi thấy rõ cả hông.
+  body_ref: {enabled: true, learn_s: 1.0, min_vis: 0.6, require_hips: false, max_motion_deg: 10, max_shift_m: 0.05,
+             relearn_lost_s: 5.0, shoulder_tol_m: [0.03, 0.08], hip_tol_m: [0.02, 0.06], rot_tol_deg: [5, 15],
+             follow: 0.05, rigid_tol_m: 0.03, adopt_s: 1.0}
 
 # Fusion nhiều camera: chỉ dùng khi chạy --source multi (xem config/fusion_2cam.yaml và docs/FUSION.md).
 fusion:
@@ -165,7 +179,11 @@ filter:
   # Kalman vận tốc không đổi trên vai/khuỷu/cổ tay (filters.PointKalman) thay EMA landmark_ema_alpha. q: gia tốc
   # (m/s^2, lớn = bám nhanh), r: nhiễu đo (m) khi tin cậy 1 (tin cậy thấp -> nhiễu lớn hơn). Mặc định TẮT: thử mô
   # phỏng, so --record + scripts/measure_lag.py trước khi dùng trên robot thật.
-  landmark_kalman: {enabled: false, q: 6.0, r: 0.015, max_gap_s: 0.3}
+  # gate_sigma > 0: loại điểm theo sai số dự đoán (điểm đo cách dự đoán > gate_sigma độ lệch chuẩn và > gate_min_m:
+  # bị che / đặt nhầm dù MediaPipe báo thấy rõ) -> dùng dự đoán; lệch liên tục confirm_frames khung thì chấp nhận
+  # (chuyển động nhanh thật). bone_length_fix: khuỷu / cổ tay bị loại thì đặt lại đúng độ dài xương đã học (cần arm_shape).
+  landmark_kalman: {enabled: false, q: 6.0, r: 0.015, max_gap_s: 0.3, gate_sigma: 4.0, gate_min_m: 0.05,
+                    confirm_frames: 3, bone_length_fix: true}
 
 grip:
   # r = (đầu ngón cái - đầu ngón trỏ) / chiều dài bàn tay. Đo theo tay mình: phím g khi chạy (chụm rồi xoè 4 s),

@@ -30,7 +30,7 @@ import yaml
 
 from .geometry import unit
 from .handfusion import HandShape, OrientationFusion, PalmModel, hand_forearm_angle
-from .perception import (ArmObs, Frame, H_INDEX_MCP, H_INDEX_TIP, H_MIDDLE_MCP, H_PINKY_MCP, H_THUMB_TIP,
+from .perception import (ArmObs, BodyRef, Frame, H_INDEX_MCP, H_INDEX_TIP, H_MIDDLE_MCP, H_PINKY_MCP, H_THUMB_TIP,
                          H_WRIST, L_EL, L_HIP, L_SH, L_WR, R_EL, R_HIP, R_SH, R_WR, ARM_IDX, _shoulders, body_frame,
                          open_finger_count, palm_frame_from_depth, rotation_distance, sample_depth,
                          slerp_rotation)
@@ -536,7 +536,7 @@ class MultiViewPerception:
     cameras: CameraModel theo cùng thứ tự; camera 0 là khung thế giới.
     """
 
-    def __init__(self, per_view, cameras, fusion_cfg=None, parallel=True):
+    def __init__(self, per_view, cameras, fusion_cfg=None, parallel=True, body_ref_cfg=None):
         fc = fusion_cfg or {}
         self.per_view, self.cams = per_view, cameras
         self.reproj_px = float(fc.get("reproj_thresh_px", 25.0))
@@ -569,6 +569,9 @@ class MultiViewPerception:
                       for s in ("right", "left")}
         self._facing = {s: None for s in ("right", "left")}
         self._body_R, self._body_reject = None, 0
+        # Tham chiếu thân (orientation.body_ref): triangulate -> mọi điểm cùng hệ camera 0, lọc từng điểm vai/hông.
+        # Chế độ front lấy khung thân từ Perception camera 0 (có khoá riêng).
+        self.body_ref = BodyRef(body_ref_cfg)
         self.view_frames = []
         # Khoá cùng 1 người ở mọi camera (_match_operator): vai 3D hợp nhất gần nhất + thời điểm
         self.person_cfg = dict(fc.get("person_match") or {})
@@ -594,7 +597,24 @@ class MultiViewPerception:
                                delegate=cfg["models"].get("delegate", "cpu"),
                                orientation_cfg=cfg.get("orientation"), **opts)
                     for opts in view_options(cfg)]
-        return cls(per_view, cams, fc)
+        return cls(per_view, cams, fc, body_ref_cfg=(cfg.get("orientation") or {}).get("body_ref"))
+
+    def relearn_body(self):
+        """Phím b: học lại khung thân (khoá của fusion và của từng camera)."""
+        self.body_ref.reset()
+        for p in self.per_view:
+            if hasattr(p, "relearn_body"):
+                p.relearn_body()
+
+    def body_status(self):
+        if getattr(self, "body_source", "triangulate") == "front" and self.per_view:
+            return self.per_view[0].body_status() + " (camera 0)"
+        return self.body_ref.status()
+
+    def body_ready(self):
+        if getattr(self, "body_source", "triangulate") == "front" and self.per_view:
+            return self.per_view[0].body_ready()
+        return not self.body_ref.enabled or self.body_ref.ready
 
     def close(self):
         for p in self.per_view:
@@ -746,14 +766,33 @@ class MultiViewPerception:
             if X is not None:
                 W[i], vis[i] = X, c
         arms = {"right": ArmObs(), "left": ArmObs()}
-        if not (np.all(np.isfinite(W[[L_SH, R_SH]])) and min(vis[L_SH], vis[R_SH]) > 0):
-            self._body_R = None                          # mất người: lần sau nhận khung thân mới
-            for s in self.orient:
-                self.orient[s].update(None)
-            return Frame(arms, None, [], None, t, fusion=info), W
+        ref = self.body_ref
+        seen = bool(np.all(np.isfinite(W[[L_SH, R_SH]])) and min(vis[L_SH], vis[R_SH]) > 0)
+        if not seen:
+            ref.lost(t)                                  # tham chiếu giữ tới relearn_lost_s rồi học lại
+            if not (ref.ready and L_SH in ref.points):
+                self._body_R = None                      # mất người: lần sau nhận khung thân mới
+                for s in self.orient:
+                    self.orient[s].update(None)
+                return Frame(arms, None, [], None, t, fusion=info), W
+            # Vai bị tay che hẳn: chạy tiếp với vai tham chiếu (thân gần như đứng yên)
         if not np.all(np.isfinite(W[[L_HIP, R_HIP]])):
             vis[L_HIP] = vis[R_HIP] = 0.0
+        W_meas, vis_meas = W.copy(), vis.copy()          # điểm đo (để học tham chiếu / vẽ chẩn đoán)
+        if ref.enabled and ref.ready and ref.points:
+            # Lọc theo độ nhất quán: điểm đo khớp tham chiếu -> dùng đo; lệch xa (tay che) -> dùng tham chiếu
+            if seen:
+                used = ref.gate_points({i: W_meas[i] for i in ref.points}, t)
+            else:                                        # không gọi gate_points: giữ đồng hồ mất người đang chạy
+                used = dict(ref.points)
+                ref.weights = {i: 0.0 for i in used}
+            for i, X in used.items():
+                W[i], vis[i] = X, max(vis[i], 0.9)
+                info["points"].setdefault(i, {})["est"] = 1.0 - ref.weights.get(i, 0.0)
         R_body, origin = body_frame(W, vis)
+        if ref.enabled and not ref.ready and seen:
+            ref.learn(R_body, origin, ref.visible(vis_meas), t,
+                      points={i: W_meas[i] for i in (L_SH, R_SH, L_HIP, R_HIP)})
         if self._body_R is None or self._body_reject >= 10:
             self._body_R, self._body_reject = R_body, 0
         elif np.rad2deg(rotation_distance(self._body_R, R_body)) <= 45:
@@ -780,6 +819,8 @@ class MultiViewPerception:
                 ob.s, ob.e, ob.w = (Rb.T @ (W[k] - origin) for k in (i_s, i_e, i_w))
                 ob.conf["upper"] = float(min(vis[i_s], vis[i_e]))
                 ob.conf["fore"] = float(min(vis[i_e], vis[i_w]))
+                # độ tin cậy riêng vai/khuỷu/cổ tay: Kalman điểm (pipeline) tin dự đoán ở điểm nhìn kém
+                ob.conf["points"] = (float(vis[i_s]), float(vis[i_e]), float(vis[i_w]))
             depth_used[side] = sum(info["points"][k]["depth"] > 0 for k in (i_s, i_e, i_w))
         return Frame(arms, None, [], Rb, t, depth_used=depth_used, body_origin=origin, fusion=info), W
 
@@ -800,6 +841,8 @@ class MultiViewPerception:
             src, ob = f0.arms[side], arms[side]
             ob.s, ob.e, ob.w = src.s, src.e, src.w
             ob.conf["upper"], ob.conf["fore"] = src.conf["upper"], src.conf["fore"]
+            if "points" in src.conf:
+                ob.conf["points"] = src.conf["points"]
             fore = Rb @ (src.w - src.e) if src.w is not None and src.e is not None else None
             self._gate_front(side, f0, views_obs, info)
             self._fuse_hand(side, ob, views_obs, Rb, info, np.zeros(3) if fore is not None else None, fore)
@@ -1005,13 +1048,40 @@ class MultiViewPerception:
 
     def draw(self, msample, fused: Frame, height=360, view_frames=None, world=None):
         """Ảnh từng camera (khung xương MediaPipe) + điểm hợp nhất chiếu lại (tím) để thấy hai camera có khớp.
-        view_frames/world: kết quả của đúng khung msample (khi process() đang chạy khung sau ở luồng khác)."""
+        view_frames/world: kết quả của đúng khung msample (khi process() đang chạy khung sau ở luồng khác).
+
+        Có tham chiếu thân (body_ref): không vẽ vai/hông thô của MediaPipe (nhảy khi tay che thân) mà vẽ thân đang dùng
+        sau lọc (xanh ngọc; điểm đang ước lượng vì bị che: cam, viền) và cánh tay hợp nhất vai -> khuỷu -> cổ tay (tím)
+        = đúng điểm robot đang dùng."""
         from .viz import draw_human, pixel, put_lines
         tiles = []
         W = getattr(self, "last_world", None) if world is None else world
         view_frames = self.view_frames if view_frames is None else view_frames
+        ref = getattr(self, "body_ref", None)
+        torso_ref = ref is not None and ref.ready and L_SH in ref.points and W is not None
+        skip = (L_SH, R_SH, L_HIP, R_HIP) if torso_ref else ()
+        est = {i for i, wgt in (ref.weights.items() if torso_ref else ()) if wgt < 0.5}
         for v, (s, f) in enumerate(zip(msample.views, view_frames)):
-            img = draw_human(s.bgr.copy(), f if v else fused)
+            img = draw_human(s.bgr.copy(), f if v else fused, skip=skip)
+            th = max(2, img.shape[1] // 250)
+            if torso_ref:
+                px = {i: pixel(p, img) for i, p in zip(BODY_IDS, self.cams[v].project(W[list(BODY_IDS)]))}
+
+                def seg(a, b, color, t):
+                    if px.get(a) is not None and px.get(b) is not None:
+                        cv2.line(img, px[a], px[b], color, t)
+                for a, b in ((L_SH, R_SH), (L_SH, L_HIP), (R_SH, R_HIP), (L_HIP, R_HIP)):
+                    seg(a, b, (255, 255, 0), th + 1)                     # thân đang dùng
+                for a, b in ((L_SH, L_EL), (L_EL, L_WR), (R_SH, R_EL), (R_EL, R_WR)):
+                    seg(a, b, (255, 0, 255), th)                         # cánh tay hợp nhất
+                for i in (L_SH, R_SH, L_HIP, R_HIP):
+                    if px.get(i) is not None and i in ref.points:
+                        if i in est:                                     # bị che: đang dùng tham chiếu
+                            cv2.circle(img, px[i], th + 5, (0, 140, 255), 2)
+                        else:
+                            cv2.circle(img, px[i], th + 4, (255, 255, 0), -1)
+                put_lines(img, ["THAN" + (f" (uoc luong {len(est)} diem)" if est else "")], org=(10, 24),
+                          color=(0, 140, 255) if est else (255, 255, 0))
             if W is not None:
                 ids = [i for i in (L_SH, R_SH, L_EL, R_EL, L_WR, R_WR) if np.all(np.isfinite(W[i]))]
                 if ids:
