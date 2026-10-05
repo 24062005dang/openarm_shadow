@@ -3,7 +3,7 @@ import types
 
 import numpy as np
 
-from openarm_shadow.geometry import rot, unit
+from openarm_shadow.core.geometry import rot, unit
 from openarm_shadow.handfusion import OrientationFusion
 from openarm_shadow.multiview import MultiSample, MultiViewPerception, view_options
 from openarm_shadow.perception import ArmObs, Frame, body_frame, palm_frame_from_depth

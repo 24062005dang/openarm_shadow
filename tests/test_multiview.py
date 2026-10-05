@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import pytest
 
-from openarm_shadow.geometry import rot, unit
+from openarm_shadow.core.geometry import rot, unit
 from openarm_shadow.multiview import (CameraModel, HandOrientationTracker, MultiSample, MultiViewPerception,
                                       fuse_point, triangulate_weighted)
 from openarm_shadow.perception import Frame, ArmObs, palm_frame_from_depth, body_frame

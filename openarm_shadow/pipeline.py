@@ -6,8 +6,8 @@ import numpy as np
 
 from .filters import EMA, ArmShape, JointFilter, PointKalman
 from .grip import GripMapper
-from .geometry import angle_between, orthonormalize, unit
-from .kinematics import ArmKinematics
+from .core.geometry import angle_between, orthonormalize, unit
+from .core.kinematics import ArmKinematics
 from .perception import ArmObs, Frame
 from .retarget import ArmRetargeter, default_hand_neutral, mirror_rotation, mirror_vector
 

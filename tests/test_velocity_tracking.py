@@ -4,7 +4,7 @@ import copy
 import numpy as np
 
 from openarm_shadow.config import load_config
-from openarm_shadow.kinematics import ArmKinematics
+from openarm_shadow.core.kinematics import ArmKinematics
 from openarm_shadow.safety import SafetyGate
 
 

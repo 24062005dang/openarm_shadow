@@ -8,11 +8,11 @@ dependencies = ["mediapipe==0.10.21", "numpy", "pyyaml"]
 [project.optional-dependencies]
 realsense = ["pyrealsense2==2.58.1.10581"]
 
-[tool.setuptools]
-packages = ["openarm_shadow", "openarm_shadow.robot"]
+[tool.setuptools.packages.find]
+include = ["openarm_shadow*"]
 
 [tool.setuptools.package-data]
-openarm_shadow = ["data/*.json"]
+"openarm_shadow.core" = ["data/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,7 +1,7 @@
 """Bố cục cửa sổ: nhiều camera -> hình robot nằm dưới, rộng bằng dải camera; 1 camera -> bên phải như cũ."""
 import numpy as np
 
-from openarm_shadow.kinematics import ArmKinematics
+from openarm_shadow.core.kinematics import ArmKinematics
 from openarm_shadow.viz import compose_view, draw_robot
 
 KINS = {"right": ArmKinematics("right")}

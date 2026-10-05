@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sinh lại openarm_shadow/data/openarm_v10_arms.json từ URDF v1.0 của openarm_description.
+"""Sinh lại openarm_shadow/core/data/openarm_v10_arms.json từ URDF v1.0 của openarm_description.
 
     git clone https://github.com/enactic/openarm_description
     python scripts/extract_kinematics.py \
@@ -48,7 +48,7 @@ def main():
         arm["finger_tip"] = origin(f)
         out["arms"][side] = arm
 
-    dst = Path(__file__).resolve().parents[1] / "openarm_shadow" / "data" / "openarm_v10_arms.json"
+    dst = Path(__file__).resolve().parents[1] / "openarm_shadow" / "core" / "data" / "openarm_v10_arms.json"
     dst.write_text(json.dumps(out, indent=1))
     print("wrote", dst)
 

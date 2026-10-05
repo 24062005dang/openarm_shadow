@@ -4,7 +4,7 @@ import types
 
 import numpy as np
 
-from openarm_shadow.geometry import rot, unit
+from openarm_shadow.core.geometry import rot, unit
 from openarm_shadow.handfusion import HandShape, PalmModel, assign_hands_to_wrists, hand_forearm_angle
 from openarm_shadow.multiview import HandOrientationTracker, MultiSample, MultiViewPerception
 from openarm_shadow.perception import palm_frame_from_depth

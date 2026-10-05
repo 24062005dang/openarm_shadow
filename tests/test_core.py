@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 from openarm_shadow.filters import JointFilter, OneEuro
-from openarm_shadow.geometry import make_frame, rot, seg_seg_distance, sp1, sp2, unit
-from openarm_shadow.kinematics import ArmKinematics
+from openarm_shadow.core.geometry import make_frame, rot, seg_seg_distance, sp1, sp2, unit
+from openarm_shadow.core.kinematics import ArmKinematics
 from openarm_shadow.retarget import ArmRetargeter, mirror_rotation, mirror_vector
 from openarm_shadow.safety import SafetyGate
 from openarm_shadow.config import load_config

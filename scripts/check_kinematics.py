@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from openarm_shadow.kinematics import ArmKinematics
+from openarm_shadow.core.kinematics import ArmKinematics
 from openarm_shadow.retarget import ArmRetargeter
 
 rng = np.random.default_rng(1)

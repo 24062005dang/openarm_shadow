@@ -28,7 +28,7 @@ import cv2
 import numpy as np
 import yaml
 
-from .geometry import unit
+from .core.geometry import unit
 from .handfusion import HandShape, OrientationFusion, PalmModel, hand_forearm_angle
 from .perception import (ArmObs, Frame, H_INDEX_MCP, H_INDEX_TIP, H_MIDDLE_MCP, H_PINKY_MCP, H_THUMB_TIP,
                          H_WRIST, L_EL, L_HIP, L_SH, L_WR, R_EL, R_HIP, R_SH, R_WR, ARM_IDX, _shoulders, body_frame,

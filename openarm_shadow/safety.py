@@ -13,8 +13,8 @@ import itertools
 
 import numpy as np
 
-from .geometry import seg_seg_distance
-from .kinematics import ArmKinematics
+from .core.geometry import seg_seg_distance
+from .core.kinematics import ArmKinematics
 
 
 def smoothstep(x):

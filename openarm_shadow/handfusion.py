@@ -24,7 +24,7 @@ from collections import deque
 
 import numpy as np
 
-from .geometry import unit
+from .core.geometry import unit
 
 # Chỉ số MediaPipe Hand
 WRIST, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP = 0, 5, 9, 13, 17
