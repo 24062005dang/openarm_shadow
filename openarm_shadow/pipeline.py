@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from .filters import EMA, ArmShape, JointFilter, PointKalman
-from .grip import GripMapper
 from .geometry import angle_between, orthonormalize, unit
-from .kinematics import ArmKinematics
+from .arm import Arm, _SideView
 from .perception import ArmObs, Frame
-from .retarget import ArmRetargeter, default_hand_neutral, mirror_rotation, mirror_vector
+from .retarget import mirror_rotation, mirror_vector
 
 
 class ShadowPipeline:
@@ -18,45 +16,24 @@ class ShadowPipeline:
         mp = cfg["mapping"]
         self.robot_sides = list(mp["robot_arms"])
         self.mode = mp["mode"]                                  # "direct" hoặc "mirror"
-        self.kins = {s: ArmKinematics(s) for s in self.robot_sides}
         rc = cfg["retarget"]
-        self.rt = {s: ArmRetargeter(self.kins[s], rc["elbow_straight_deg"]) for s in self.robot_sides}
+        # Mỗi tay robot là một đối tượng Arm (cùng một lớp cho trái / phải, xem arm.py); dict theo tay bên dưới là
+        # "view" trỏ vào Arm để mã và test cũ (pipe.held["right"], pipe.rt["left"]...) chạy tiếp.
+        self.arms = {s: Arm(s, cfg, self.human_side_for(s), mirrored=self.mode != "direct") for s in self.robot_sides}
+        for name in ("kins:kin", "rt", "filt", "lm_ema", "grip", "q_prev", "last_info", "held", "conf", "kf_rejected",
+                     "arm_shape_info", "hand_calibrated", "calib_ready_now", "calib_progress", "calib_hint",
+                     "_calib_samples", "_calib_start", "_calib_prev"):
+            view, _, attr = name.partition(":")
+            setattr(self, view, _SideView(self.arms, attr or view))
         # J3 (xoay cánh tay) càng gần thẳng càng kém xác định (trục J3 trùng trục J5 khi tay thẳng): độ tin cậy J3
         # tăng dần từ 0 ở elbow_straight_deg tới đủ ở elbow_j3_full_deg.
         self.j3_bend = (float(rc["elbow_straight_deg"]), float(rc.get("elbow_j3_full_deg", 30.0)))
-        for s in self.robot_sides:            # hướng trung tính mặc định theo đúng bàn tay người điều khiển tay này
-            Hn = default_hand_neutral(self.human_side_for(s))
-            self.rt[s].set_hand_neutral(Hn if self.mode == "direct" else mirror_rotation(Hn))
         fc = cfg["filter"]
-        self.filt = {
-            s: JointFilter(8, fc["min_cutoff"], fc["beta"], fc["deadband_deg"], fc["jump_deg"],
-                           fc["jump_hold_s"], fc["min_conf"], angular=[True] * 7 + [False],
-                           jump_confirm_conf=fc.get("jump_confirm_conf", 0.0))
-            for s in self.robot_sides
-        }
-        self.lm_ema = {s: EMA(fc["landmark_ema_alpha"]) for s in self.robot_sides}
-        # Kalman điểm 3D thay EMA (tuỳ chọn), lọc khung xương cánh tay (tuỳ chọn; cần điểm thang mét nhất quán)
         kc = dict(fc.get("landmark_kalman") or {})
-        self.lm_kf = ({s: PointKalman(kc.get("q", 6.0), kc.get("r", 0.015), kc.get("max_gap_s", 0.3),
-                                      kc.get("gate_sigma", 0.0), kc.get("gate_min_m", 0.05),
-                                      kc.get("confirm_frames", 3))
-                       for s in self.robot_sides} if kc.get("enabled", False) else None)
+        self.lm_kf = _SideView(self.arms, "lm_kf") if kc.get("enabled", False) else None
         self.bone_fix = bool(kc.get("bone_length_fix", True))
-        self.kf_rejected = {s: np.zeros(3, bool) for s in self.robot_sides}   # vai/khuỷu/cổ tay bị loại khung vừa rồi
-        ac = dict(fc.get("arm_shape") or {})
-        self.arm_shape = ({s: ArmShape(ac.get("tol", 0.25), ac.get("samples", 90), ac.get("min_samples", 15),
-                                       ac.get("reset_s", 2.0), ac.get("len_range_m", (0.12, 0.5)))
-                           for s in self.robot_sides} if ac.get("enabled", False) else None)
-        self.arm_shape_info = {s: None for s in self.robot_sides}
-        g = cfg["grip"]
-        self.grip = {s: GripMapper(g["pinch_ratio"], g["open_ratio"], g.get("levels"), g.get("level_hysteresis", 0.05),
-                                   g.get("level_dwell_s", 0.15), g.get("calib_s", 4.0))
-                     for s in self.robot_sides}
-        self.q_prev = {s: np.zeros(7) for s in self.robot_sides}
-        self.last_info = {}
+        self.arm_shape = _SideView(self.arms, "arm_shape") if dict(fc.get("arm_shape") or {}).get("enabled", False) else None
         self.fresh = False       # khung vừa rồi có ít nhất 1 khớp nhận giá trị mới (không phải giữ) -> dead-man
-        self.held = {s: np.ones(8, bool) for s in self.robot_sides}   # cờ giữ của bộ lọc từng khớp (SafetyGate)
-        self.conf = {s: np.zeros(8) for s in self.robot_sides}       # độ tin cậy từng khớp khung vừa rồi (ghi --record)
         cc = cfg.get("calibration", {}).get("hand_auto", {})
         self.auto_calib_enabled = bool(cc.get("enabled", True))
         self.auto_calib_hold_s = float(cc.get("hold_s", 0.6))
@@ -66,13 +43,6 @@ class ShadowPipeline:
         self.auto_calib_upper_down = np.deg2rad(float(cc.get("max_upper_from_down_deg", 55)))
         self.auto_calib_fore_down = np.deg2rad(float(cc.get("max_fore_from_down_deg", 55)))
         self.auto_calib_palm_camera = np.deg2rad(float(cc.get("max_palm_from_camera_deg", 50)))
-        self.hand_calibrated = {s: False for s in self.robot_sides}
-        self.calib_ready_now = {s: False for s in self.robot_sides}
-        self.calib_progress = {s: 0.0 for s in self.robot_sides}
-        self.calib_hint = {s: "dua tay vao khung" for s in self.robot_sides}
-        self._calib_samples = {s: [] for s in self.robot_sides}
-        self._calib_start = {s: None for s in self.robot_sides}
-        self._calib_prev = {s: None for s in self.robot_sides}
 
     # ------------------------------------------------------------------
     def human_side_for(self, robot_side):
@@ -138,11 +108,7 @@ class ShadowPipeline:
         return done
 
     def _reset_auto_calib(self, side, keep_progress=False):
-        self._calib_samples[side] = []
-        self._calib_start[side] = None
-        self._calib_prev[side] = None
-        if not keep_progress:
-            self.calib_progress[side] = 0.0
+        self.arms[side].reset_auto_calib(keep_progress)
 
     def _calib_pose_status(self, ob):
         down = np.array([0.0, 0.0, -1.0])

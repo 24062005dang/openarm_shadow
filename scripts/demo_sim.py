@@ -21,6 +21,7 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from openarm_shadow.arm import MIRROR_SIGNS
 from openarm_shadow.config import load_config
 from openarm_shadow.perception import ArmObs, Frame
 from openarm_shadow.pipeline import ShadowPipeline
@@ -45,7 +46,7 @@ KEYS = [
     (18.5, "tay tha xuoi", [0, 0, 0, 0, 0, 0, 0]),
     (19.5, "tay tha xuoi", [0, 0, 0, 0, 0, 0, 0]),
 ]
-MIRROR = np.array([-1, -1, -1, 1, -1, -1, -1])
+MIRROR = MIRROR_SIGNS          # openarm_shadow/arm.py: đảo dấu J1,J2,J3,J5,J6,J7 (tay trái = ảnh gương tay phải)
 
 
 def human_pose(t):
