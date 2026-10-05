@@ -5,10 +5,10 @@ import types
 import numpy as np
 
 from openarm_shadow.core.geometry import unit
-from openarm_shadow.handfusion import HandShape, PalmModel, hand_forearm_angle
+from openarm_shadow.fusion import HandShape, PalmModel, hand_forearm_angle
 from openarm_shadow.perception import assign_hands_to_wrists
 from openarm_shadow.cameras import MultiSample
-from openarm_shadow.multiview import MultiViewPerception
+from openarm_shadow.fusion import MultiViewPerception
 from openarm_shadow.perception import palm_frame_from_depth
 
 from test_multiview import FakeView, SUBJECT, hand_points, human_world, two_cams

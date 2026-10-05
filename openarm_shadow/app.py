@@ -21,7 +21,7 @@ from .pipeline import ShadowPipeline
 from .robot import make_robot
 from .safety import SafetyGate
 from .cameras.multicam import MultiCameraSource
-from .multiview import MultiViewPerception
+from .fusion.multiview import MultiViewPerception
 from .cameras.sources import open_source
 from .viz import compose_view, draw_human, draw_robot, put_lines
 

@@ -28,7 +28,7 @@ from openarm_shadow.cameras.calibration import (average_extrinsics, board_pose, 
                                         relative_extrinsic, reprojection_rms_px)
 from openarm_shadow.config import ROOT, load_config
 from openarm_shadow.cameras import MultiCameraSource
-from openarm_shadow.multiview import CameraModel
+from openarm_shadow.fusion import CameraModel
 from openarm_shadow.viz import put_lines
 
 

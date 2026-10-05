@@ -4,9 +4,9 @@ import types
 import numpy as np
 
 from openarm_shadow.core.geometry import rot, unit
-from openarm_shadow.handfusion import OrientationFusion
+from openarm_shadow.fusion import OrientationFusion
 from openarm_shadow.cameras import MultiSample
-from openarm_shadow.multiview import MultiViewPerception, view_options
+from openarm_shadow.fusion import MultiViewPerception, view_options
 from openarm_shadow.perception import ArmObs, Frame, body_frame, palm_frame_from_depth
 
 from test_handfusion import _hand_R, ang

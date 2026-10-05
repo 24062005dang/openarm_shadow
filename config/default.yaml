@@ -95,7 +95,7 @@ fusion:
   orientation_fusion: {temporal_weight: 1.5, switch_deg: 100, switch_frames: 3, max_disagree_deg: 70,
                        alpha: 0.65, fast_alpha: 0.92, fast_angle_deg: 60, hold_frames: 12,
                        acquire_frames: 4, acquire_stable_deg: 20, acquire_jump_deg: 45}
-  hand:                      # làm sạch bàn tay 3D (openarm_shadow/handfusion.py)
+  hand:                      # làm sạch bàn tay 3D (openarm_shadow/fusion/hand.py)
     wrist_gate_px: 60        # bàn tay ở 1 camera xa cổ tay Pose chiếu vào camera đó hơn mức này -> bỏ (px quy đổi 640x480)
     palm_gate_px: 18         # chế độ front: 5 điểm lòng bàn tay giữa 2 camera lệch (trung vị) hơn mức này -> bỏ camera phụ
     size_ref_px: 35          # bàn tay nhỏ hơn (cổ tay -> gốc ngón giữa, px) thì trọng số giảm (tối thiểu 0,4)

@@ -7,7 +7,7 @@ import pytest
 
 from openarm_shadow.core.geometry import rot, unit
 from openarm_shadow.cameras import MultiSample
-from openarm_shadow.multiview import CameraModel, MultiViewPerception, fuse_point, triangulate_weighted
+from openarm_shadow.fusion import CameraModel, MultiViewPerception, fuse_point, triangulate_weighted
 from openarm_shadow.perception import Frame, ArmObs, palm_frame_from_depth, body_frame
 
 K = np.array([[600.0, 0, 320], [0, 600.0, 240], [0, 0, 1]])
@@ -243,7 +243,7 @@ def test_charuco_extrinsics_recovered():
 def test_webcam_calibration_size_is_checked(tmp_path):
     """Nội tham số webcam chỉ đúng ở độ phân giải lúc hiệu chuẩn: lệch thì dừng, không chạy với số sai."""
     import yaml
-    from openarm_shadow.multiview import check_image_size, load_calibration
+    from openarm_shadow.fusion import check_image_size, load_calibration
     f = tmp_path / "calib.yaml"
     f.write_text(yaml.safe_dump({"cameras": {
         "front": {"R": np.eye(3).tolist(), "t": [0, 0, 0], "K": K.tolist(), "dist": [0] * 5, "size": [640, 480]},

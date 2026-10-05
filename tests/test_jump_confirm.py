@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from openarm_shadow.filtering import JointFilter
-from openarm_shadow.multiview import fuse_point
+from openarm_shadow.fusion import fuse_point
 
 
 def make():
