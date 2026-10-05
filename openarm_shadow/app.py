@@ -5,7 +5,7 @@ Hai luồng:
 - luồng điều khiển: chạy đều `control_hz`, bước SafetyGate (giới hạn vận tốc, dead-man, va chạm)
   rồi gửi lệnh xuống robot.
 
-Phím: SPACE = engage / nhả (ly hợp) · c = hiệu chuẩn hướng bàn tay trung tính · p = về tư thế nghỉ
+Phím: SPACE = engage / nhả thủ công (ly hợp) · c = hiệu chuẩn hướng bàn tay trung tính · p = về tư thế nghỉ
       q hoặc ESC = về tư thế nghỉ rồi thoát.
 """
 from __future__ import annotations
@@ -264,16 +264,22 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
         rest = np.deg2rad(np.asarray(cfg["robot"]["rest_pose_deg"], float))
         log = {"t": [], **{f"{k}_{s}": [] for k in ("target", "cmd", "conf", "fus") for s in pipe.robot_sides}}
         fps_t, fps = time.monotonic(), 0.0
-        auto_engage_s = float(cfg.get("calibration", {}).get("hand_auto", {}).get("auto_engage_sim_s", 3.0))
+        hand_auto_cfg = cfg.get("calibration", {}).get("hand_auto", {})
+        auto_engage_key = "auto_engage_real_s" if robot_kind == "openarm" else "auto_engage_sim_s"
+        auto_engage_value = hand_auto_cfg.get(auto_engage_key, None)
+        auto_engage_s = None if auto_engage_value is None else float(auto_engage_value)
         ready_since = None
         auto_engage_used = False
         auto_countdown = None
-        msg = ("GIU READY 3s: tu dong sync | SPACE: dung/chay thu cong | c: calib lai | g: calib kep | q: thoat"
-               if robot_kind == "sim" else
-               "SPACE: engage | c: hieu chuan tay | g: calib kep | p: ve nghi | q: thoat")
+        auto_text = (f"GIU READY {auto_engage_s:g}s: tu dong sync | " if auto_engage_s is not None else "")
+        msg = auto_text + "SPACE: dung/chay thu cong | c: calib lai | g: calib kep | p: ve nghi | q: thoat"
         if real is not None:
             msg = "DRY RUN: motor TAT. Xanh la = robot that. " + msg
         disp = cfg.get("display", {}) or {}
+        display_hz = max(0.1, float(disp.get("update_hz", 30.0)))
+        display_period = 1.0 / display_hz
+        last_display_t = -float("inf")
+        compact_display = str(disp.get("mode", "full")).lower() == "compact"
         if show:
             cv2.namedWindow("openarm_shadow", cv2.WINDOW_NORMAL)   # kéo giãn được cửa sổ
         if multi:
@@ -299,7 +305,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                 print("Tự động hiệu chuẩn tay trung tính cho:", auto_done)
             ready_live = all(pipe.hand_calibrated[s] and pipe.calib_ready_now[s] for s in pipe.robot_sides)
             now = time.monotonic()
-            if robot_kind == "sim" and not engaged and not auto_engage_used:
+            if auto_engage_s is not None and not engaged and not auto_engage_used:
                 if ready_live:
                     ready_since = now if ready_since is None else ready_since
                     auto_countdown = max(0.0, auto_engage_s - (now - ready_since))
@@ -311,7 +317,8 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                         engaged = True
                         auto_engage_used = True
                         auto_countdown = None
-                        print("Simulation tự đồng bộ sau khi READY đủ", auto_engage_s, "giây")
+                        kind_text = "Robot thật" if robot_kind == "openarm" else "Simulation"
+                        print(kind_text, "tự đồng bộ sau khi READY liên tục đủ", auto_engage_s, "giây")
                 else:
                     ready_since = None
                     auto_countdown = None
@@ -336,9 +343,12 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
             now = time.monotonic()
             fps = 0.9 * fps + 0.1 / max(now - fps_t, 1e-3)
             fps_t = now
-            if show:
+            k = -1
+            if show and now - last_display_t >= display_period:
+                last_display_t = now
                 if multi:
-                    cam = perc.draw(sample, fr, view_frames=extra[0], world=extra[1])
+                    cam = perc.draw(sample, fr, height=int(disp.get("camera_height", 360)),
+                                    view_frames=extra[0], world=extra[1])
                 else:
                     cam = draw_human(frame_bgr.copy(), fr)
                     if cfg["camera"]["mirror_display"]:
@@ -369,7 +379,19 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                         gl += f" | CALIB KEP {rem:3.1f}s: chum het co roi xoe het co"
                     lines.append(gl)
                 if multi:
-                    lines += fusion_lines(fr, pipe.robot_sides)
+                    fl = fusion_lines(fr, pipe.robot_sides)
+                    # Compact vẫn giữ dòng sync/mất khung và chất lượng hai bàn tay; bỏ phần
+                    # khớp người/chi tiết từng vai-khuỷu-cổ tay vốn tạo rất nhiều chữ trên ba camera.
+                    if compact_display:
+                        short, side = [fl[0]], None
+                        for ln in fl[1:]:
+                            if ln.startswith(("right:", "left:")):
+                                side = ln.split(":", 1)[0]
+                            elif ln.startswith("  ban tay"):
+                                short.append(f"{side or '?'} {ln.strip()}")
+                        lines += short
+                    else:
+                        lines += fl
                 elif sample.depth_m is not None:
                     ds = " ".join(f"{s}:{fr.depth_used.get(s, 0)}/3" for s in pipe.robot_sides)
                     lines.append("D455 depth vai/khuyu/co tay " + ds + " (3/3 = dang dung depth)")
@@ -386,22 +408,22 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                 lines.append("Auto calib tay: " + cs)
                 for s in pipe.robot_sides:
                     inf = pipe.last_info.get(s)
-                    if inf is not None:
+                    if inf is not None and not compact_display:
                         lines.append(f"{s}: err u {inf.err_upper_deg:5.1f} l {inf.err_fore_deg:5.1f} "
                                      f"tay {inf.err_hand_deg:5.1f} deg" + (" [thang]" if inf.elbow_straight else ""))
                     ai = pipe.arm_shape_info.get(s)
-                    if ai is not None:
+                    if ai is not None and not compact_display:
                         # Lọc khung xương: độ dài đoạn tay khung này (cm) x tỉ lệ so với độ dài đã học; BO = khớp giữ
                         def seg(name, k):
                             r = ai["ratio"][k]
                             return (f"{name} {100 * ai['len'][k]:.0f}cm" + (f" x{r:.2f}" if np.isfinite(r) else
                                     " (dang hoc)") + ("" if ai["ok"][k] else " BO"))
                         lines.append(f"{s} xuong: " + seg("tren", 0) + " | " + seg("cang", 1))
-                    if s in targets:
+                    if s in targets and not compact_display:
                         at, ac = np.rad2deg(targets[s][:4]), np.rad2deg(cmd[s][:4])
                         lines.append(f"{s} J1-4 target " + " ".join(f"{v:5.1f}" for v in at) + " | cmd " +
                                      " ".join(f"{v:5.1f}" for v in ac))
-                    if s in targets and np.all(np.isfinite(targets[s][4:7])):
+                    if s in targets and np.all(np.isfinite(targets[s][4:7])) and not compact_display:
                         wt = np.rad2deg(targets[s][4:7])
                         wc = np.rad2deg(cmd[s][4:7])
                         lines.append(f"{s} J5-7 target {wt[0]:5.1f} {wt[1]:5.1f} {wt[2]:5.1f} | "
@@ -422,7 +444,10 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                                     layout=disp.get("robot_layout", "auto"),
                                     robot_height=disp.get("robot_height", 480))
                 cv2.imshow("openarm_shadow", view)
+            if show:
+                # Bắt phím mỗi khung perception, kể cả khi chỉ render UI 8–10 Hz.
                 k = cv2.waitKey(1) & 0xFF
+            if show:
                 if k == ord(" "):
                     auto_engage_used = True
                     ready_since = None

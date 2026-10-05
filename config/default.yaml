@@ -34,6 +34,11 @@ display:
   # (vd 360) hoặc kéo nhỏ cửa sổ.
   robot_layout: auto
   robot_height: 480
+  # UI không cần vẽ lại theo mỗi kết quả MediaPipe. Hạ update_hz giảm resize/vẽ/chép ảnh và
+  # đọc feedback chỉ phục vụ hiển thị; perception và vòng điều khiển vẫn chạy hết tốc độ.
+  update_hz: 30
+  camera_height: 360
+  mode: full                 # full | compact
 
 orientation:
   reacquire_frames: 1        # nhận lại ngay; continuity quaternion vẫn chặn flip
@@ -128,6 +133,7 @@ calibration:
     max_fore_from_down_deg: 80   # cho phép khuỷu thả lỏng; cổ tay vẫn thấp hơn khuỷu
     max_palm_from_camera_deg: 50 # pháp tuyến lòng bàn tay hướng về D455
     auto_engage_sim_s: 3.0       # chỉ simulation: giữ READY liên tục rồi tự engage
+    auto_engage_real_s: null     # robot thật mặc định vẫn cần SPACE; chỉ bật trong config đã kiểm tra
 
 mapping:
   # direct: tay phải người -> tay phải robot (như đứng "bên trong" robot)
