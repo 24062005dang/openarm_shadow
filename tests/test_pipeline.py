@@ -3,7 +3,7 @@ import numpy as np
 
 from openarm_shadow.config import load_config
 from openarm_shadow.perception import ArmObs, Frame
-from openarm_shadow.pipeline import ShadowPipeline
+from openarm_shadow.retarget.pipeline import ShadowPipeline
 from openarm_shadow.viz import draw_robot
 
 
@@ -124,7 +124,7 @@ def test_default_hand_neutral_matches_relaxed_hand_each_side():
     import numpy as np
     from openarm_shadow.config import load_config
     from openarm_shadow.perception import palm_frame_from_depth
-    from openarm_shadow.pipeline import ShadowPipeline
+    from openarm_shadow.retarget.pipeline import ShadowPipeline
     from test_multiview import hand_points
 
     cfg = load_config()

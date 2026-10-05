@@ -17,7 +17,7 @@ import cv2
 import numpy as np
 
 from .perception import ARM_IDX, Perception
-from .pipeline import ShadowPipeline
+from .retarget.pipeline import ShadowPipeline
 from .robot import make_robot
 from .safety import SafetyGate
 from .cameras.multicam import MultiCameraSource

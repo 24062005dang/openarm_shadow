@@ -22,7 +22,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from openarm_shadow.config import load_config
 from openarm_shadow.perception import ArmObs, Frame
-from openarm_shadow.pipeline import ShadowPipeline
+from openarm_shadow.retarget.pipeline import ShadowPipeline
 from openarm_shadow.robot import make_robot
 from openarm_shadow.safety import SafetyGate
 from openarm_shadow.viz import draw_robot, put_lines
