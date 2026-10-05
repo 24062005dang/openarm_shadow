@@ -2,7 +2,7 @@
 import cv2
 import numpy as np
 
-import openarm_shadow.sources as sources
+import openarm_shadow.cameras.sources as sources
 
 MJPG = cv2.VideoWriter_fourcc(*"MJPG")
 YUYV = cv2.VideoWriter_fourcc(*"YUYV")

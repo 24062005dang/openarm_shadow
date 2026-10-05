@@ -17,9 +17,9 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from openarm_shadow.calibration import estimate_time_offset, motion_energy  # noqa: E402
+from openarm_shadow.cameras.calibration import estimate_time_offset, motion_energy  # noqa: E402
 from openarm_shadow.config import load_config  # noqa: E402
-from openarm_shadow.multiview import MultiCameraSource  # noqa: E402
+from openarm_shadow.cameras import MultiCameraSource  # noqa: E402
 
 
 def main():

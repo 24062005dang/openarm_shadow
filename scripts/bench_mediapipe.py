@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np  # noqa: E402
 
 from openarm_shadow.config import load_config  # noqa: E402
-from openarm_shadow.sources import open_source  # noqa: E402
+from openarm_shadow.cameras.sources import open_source  # noqa: E402
 
 
 def bench(cfg, frames, delegate, imgs):

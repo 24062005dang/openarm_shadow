@@ -24,10 +24,11 @@ import numpy as np
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from openarm_shadow.calibration import (average_extrinsics, board_pose, calibrate_intrinsics, detect, make_board,
+from openarm_shadow.cameras.calibration import (average_extrinsics, board_pose, calibrate_intrinsics, detect, make_board,
                                         relative_extrinsic, reprojection_rms_px)
 from openarm_shadow.config import ROOT, load_config
-from openarm_shadow.multiview import CameraModel, MultiCameraSource
+from openarm_shadow.cameras import MultiCameraSource
+from openarm_shadow.multiview import CameraModel
 from openarm_shadow.viz import put_lines
 
 
