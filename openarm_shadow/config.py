@@ -21,6 +21,11 @@ def load_config(path=None):
     cfg = yaml.safe_load(DEFAULT.read_text())
     for p in ([path] if isinstance(path, (str, Path)) else (path or [])):
         cfg = _merge(cfg, yaml.safe_load(Path(p).read_text()))
+    return resolve_model_paths(cfg)
+
+
+def resolve_model_paths(cfg):
+    """Đường dẫn model MediaPipe tương đối -> tuyệt đối theo gốc repo (sửa tại chỗ, trả lại cfg)."""
     for k in ("pose", "hand"):
         p = Path(cfg["models"][k])
         cfg["models"][k] = str(p if p.is_absolute() else ROOT / p)

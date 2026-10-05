@@ -1,12 +1,7 @@
-Metadata-Version: 2.4
-Name: openarm_shadow
+Metadata-Version: 2.1
+Name: openarm-shadow
 Version: 0.1.0
 Summary: Teleop OpenArm v1.0 bằng camera 2D (MediaPipe + retarget kiểu SEW-Mimic)
 Requires-Python: >=3.10
-License-File: NOTICE
-Requires-Dist: mediapipe==0.10.21
-Requires-Dist: numpy
-Requires-Dist: pyyaml
 Provides-Extra: realsense
-Requires-Dist: pyrealsense2==2.58.1.10581; extra == "realsense"
-Dynamic: license-file
+License-File: NOTICE
