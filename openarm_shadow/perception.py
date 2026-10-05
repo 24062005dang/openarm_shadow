@@ -12,6 +12,8 @@ nên hướng bàn tay có thể đổi sang khung thân bằng cùng ma trận 
 """
 from __future__ import annotations
 
+import contextlib
+import threading
 import time
 from dataclasses import dataclass, field
 
@@ -27,6 +29,11 @@ ARM_IDX = {"left": (L_SH, L_EL, L_WR), "right": (R_SH, R_EL, R_WR)}
 # chỉ số MediaPipe Hand
 H_WRIST, H_THUMB_TIP, H_INDEX_MCP, H_INDEX_TIP, H_MIDDLE_MCP, H_PINKY_MCP = 0, 4, 5, 8, 9, 17
 FINGER_CHAINS = ((5, 6, 7, 8), (9, 10, 11, 12), (13, 14, 15, 16), (17, 18, 19, 20))
+# MediaPipe GPU (TFLite GPU delegate qua EGL) bị treo vĩnh viễn khi nhiều landmarker GPU chạy đồng thời ở nhiều luồng
+# (fusion 3 camera: 3 Pose + 3 Hand song song -> cả 6 lệnh detect đứng trong _process_video_data, log
+# "Tensors are designed for single writes"). Mọi lệnh detect trên GPU đi qua khoá chung này (mỗi lệnh ~5 ms trên
+# RTX 3050 nên chạy nối tiếp vẫn đủ nhanh); landmarker CPU vẫn chạy song song như cũ.
+_GPU_LOCK = threading.Lock()
 
 
 @dataclass
@@ -483,6 +490,12 @@ class Perception:
         self._orientation_bad = {"right": 0, "left": 0}
         self._body_R = None
 
+    def _detect(self, name, img, ts):
+        """detect_for_video của landmarker name ("pose"/"hand"); trên GPU thì nối tiếp qua _GPU_LOCK."""
+        lm = self.pose if name == "pose" else self.hands
+        with _GPU_LOCK if getattr(self, "delegate", {}).get(name) == "gpu" else contextlib.nullcontext():
+            return lm.detect_for_video(img, ts)
+
     def close(self):
         if getattr(self, "_hand_pool", None) is not None:
             self._hand_pool.shutdown(wait=True)
@@ -514,7 +527,7 @@ class Perception:
         self._pose_held = False
         if self._last_pose is not None and self._pose_count % self.pose_interval != 0:
             return self._last_pose
-        pres = self.pose.detect_for_video(img, ts)
+        pres = self._detect("pose", img, ts)
         cands = [np.array([[p.x, p.y, p.visibility or 0.0] for p in P]) for P in (pres.pose_landmarks or [])]
         self.n_people = len(cands)
         # Khoá người: nhớ vai người điều khiển tới lock_keep_frames lần Pose liền không thấy họ (đi khuất ngắn, bị
@@ -591,16 +604,16 @@ class Perception:
         rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)     # nhanh hơn bgr[:, :, ::-1] + copy (~8 -> ~1 ms ở 720p)
         img = self.mp.Image(image_format=self.mp.ImageFormat.SRGB, data=rgb)
         if not self.pose_enabled:
-            return self._hand_only(self.hands.detect_for_video(img, ts), t)
+            return self._hand_only(self._detect("hand", img, ts), t)
         pool = getattr(self, "_hand_pool", None)
         if pool is not None:
-            fut = pool.submit(self.hands.detect_for_video, img, ts)
+            fut = pool.submit(self._detect, "hand", img, ts)
             try:
                 pose = self._run_pose(img, ts)
             finally:
                 hres = fut.result()          # luôn chờ Hand xong: không để 2 lần detect chồng nhau trên cùng model
         else:
-            hres = self.hands.detect_for_video(img, ts)
+            hres = self._detect("hand", img, ts)
             pose = self._run_pose(img, ts)
         h, w = bgr.shape[:2]
 

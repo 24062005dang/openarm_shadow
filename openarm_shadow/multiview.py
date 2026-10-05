@@ -1006,7 +1006,7 @@ class MultiViewPerception:
     def draw(self, msample, fused: Frame, height=360, view_frames=None, world=None):
         """Ảnh từng camera (khung xương MediaPipe) + điểm hợp nhất chiếu lại (tím) để thấy hai camera có khớp.
         view_frames/world: kết quả của đúng khung msample (khi process() đang chạy khung sau ở luồng khác)."""
-        from .viz import draw_human, put_lines
+        from .viz import draw_human, pixel, put_lines
         tiles = []
         W = getattr(self, "last_world", None) if world is None else world
         view_frames = self.view_frames if view_frames is None else view_frames
@@ -1016,8 +1016,9 @@ class MultiViewPerception:
                 ids = [i for i in (L_SH, R_SH, L_EL, R_EL, L_WR, R_WR) if np.all(np.isfinite(W[i]))]
                 if ids:
                     for p in self.cams[v].project(W[ids]):
-                        if np.all(np.isfinite(p)):
-                            cv2.circle(img, (int(p[0]), int(p[1])), 7, (255, 0, 255), 2)
+                        q = pixel(p, img)          # điểm sát mặt phẳng camera: toạ độ khổng lồ -> bỏ, không vẽ
+                        if q is not None:
+                            cv2.circle(img, q, 7, (255, 0, 255), 2)
             put_lines(img, [f"{self.cams[v].name}"], org=(10, img.shape[0] - 14))
             scale = height / img.shape[0]
             tiles.append(cv2.resize(img, (int(img.shape[1] * scale), height)))

@@ -20,6 +20,18 @@ def ascii_text(s: str) -> str:
     return s.encode("ascii", "replace").decode()
 
 
+def pixel(p, img, margin=2.0):
+    """Điểm ảnh (x, y) float -> tuple int cho cv2, hoặc None nếu NaN hay xa ngoài ảnh quá margin x kích thước ảnh.
+
+    Điểm 3D chiếu lại (fusion) nằm sát mặt phẳng camera cho toạ độ hàng tỉ pixel: int() vượt giới hạn int của
+    OpenCV -> cv2.circle báo "Can't parse 'center'" và làm dừng cả chương trình. Điểm như vậy chỉ bỏ qua khi vẽ."""
+    p = np.asarray(p, float)
+    lim = margin * max(img.shape[:2])
+    if p.shape[-1] < 2 or not np.all(np.isfinite(p[:2])) or np.any(np.abs(p[:2]) > lim):
+        return None
+    return int(round(p[0])), int(round(p[1]))
+
+
 def draw_human(img, frame):
     h, w = img.shape[:2]
     th = max(2, w // 250)           # nét dày theo kích thước ảnh (1280 px -> 5 px)
@@ -42,11 +54,14 @@ def draw_human(img, frame):
     for ob in frame.arms.values():
         if ob.hand_axes_px is None:
             continue
-        origin = tuple(np.round(ob.hand_axes_px[0]).astype(int))
+        origin = pixel(ob.hand_axes_px[0], img)
+        if origin is None:
+            continue
         cv2.circle(img, origin, th + 2, (255, 255, 255), -1)
         for endpoint, color in zip(ob.hand_axes_px[1:], axis_colors):
-            cv2.arrowedLine(img, origin, tuple(np.round(endpoint).astype(int)), color,
-                            max(2, th - 1), tipLength=0.2)
+            end = pixel(endpoint, img)
+            if end is not None:
+                cv2.arrowedLine(img, origin, end, color, max(2, th - 1), tipLength=0.2)
     return img
 
 
