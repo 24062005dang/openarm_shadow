@@ -41,6 +41,12 @@ def other_side(side):
     return "left" if side == "right" else "right"
 
 
+def mirror_limits_deg(limits):
+    """Giới hạn [[lo, hi]] x 7 (độ, góc URDF) của một tay -> giới hạn tương ứng của tay kia khi nó làm ảnh gương:
+    khớp đảo dấu (MIRROR_SIGNS = -1) thì [lo, hi] -> [-hi, -lo]. Vd phải J2 [-9, 90] -> trái [-90, 9]."""
+    return [[float(min(s * lo, s * hi)), float(max(s * lo, s * hi))] for (lo, hi), s in zip(limits, MIRROR_SIGNS)]
+
+
 def mirror_q(q):
     """Góc khớp của tay kia khi nó làm ảnh gương của tư thế q. q: 7 góc, hoặc 8 phần tử (kẹp 0..1 giữ nguyên);
     NaN (giữ khớp) giữ nguyên NaN."""

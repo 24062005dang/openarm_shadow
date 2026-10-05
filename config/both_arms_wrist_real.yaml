@@ -10,4 +10,4 @@
 safety:
   soft_limits_deg:
     #        J1          J2          J3          J4          J5          J6          J7
-    left:  [[-75, 75], [-90, 9], [-85, 85], [0, 135], [-85, 85], [-40, 40], [-80, 80]]
+    left: mirror   # 05/10: không còn cần file này, both_arms_real.yaml đã cho tay trái = ảnh gương tay phải

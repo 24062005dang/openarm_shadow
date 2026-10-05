@@ -142,3 +142,16 @@ def test_mirror_mode_equals_sign_flipped_right_arm():
         fr.arms["right"], fr.arms["left"] = fr.arms["right"], fr.arms["right"]
         out_l = mirror.step(fr)["left"]
     assert np.allclose(out_l[:7], MIRROR_SIGNS * out_r[:7], atol=np.deg2rad(2.0)), (np.rad2deg(out_l[:7]), np.rad2deg(out_r[:7]))
+
+
+def test_left_limits_mirror_right_after_config_merge():
+    """both_arms_real.yaml: left: mirror -> giới hạn tay trái = ảnh gương giới hạn tay phải của config đang ghép."""
+    from openarm_shadow.mapping.arm import mirror_limits_deg
+    full = load_config(["config/wrist_real_30.yaml", "config/gripper_real.yaml", "config/both_arms_real.yaml"])
+    lim = full["safety"]["soft_limits_deg"]
+    assert lim["left"] == mirror_limits_deg(lim["right"])
+    assert lim["left"] == [[-75, 75], [-90, 9], [-85, 85], [0, 135], [-85, 85], [-40, 40], [-80, 80]]
+    assert lim["left"] == full["robot"]["motor_limits_deg"]["left"]          # trùng chốt chặn motor tay trái
+    first = load_config(["config/first_real.yaml", "config/both_arms_real.yaml"])["safety"]["soft_limits_deg"]
+    assert first["left"] == [[-45, 10], [-45, 0], [-30, 30], [0, 90], [0, 0], [0, 0], [0, 0]]   # J1-J4 nhỏ như phải
+    assert mirror_limits_deg(mirror_limits_deg(lim["right"])) == [[float(a), float(b)] for a, b in lim["right"]]
