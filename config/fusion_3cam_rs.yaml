@@ -1,0 +1,55 @@
+# Fusion 3 camera cho 2 tay, KHÔNG dùng iPhone (iPhone DroidCam trễ ~54 ms so với webcam/RealSense):
+#   camera 0 = webcam laptop TRỰC DIỆN ở giữa (khung tham chiếu, không depth) - máy RTX 3050 của nhóm (Sonix USB2.0 HD,
+#              1280x720 MJPG 30 fps)
+#   camera 1 = RealSense D455, lệch ~45° về phía tay PHẢI người điều khiển (có depth)
+#   camera 2 = RealSense D435i, lệch ~45° về phía tay TRÁI (có depth)
+# Cả 3 camera trễ thấp như nhau -> sync latest (không chờ, không bỏ khung).
+#
+#   python scripts/list_cameras.py           # chỉ số webcam + serial 2 RealSense; cả 2 phải báo USB 3.x
+#   python scripts/calibrate_cameras.py --config config/fusion_3cam_rs.yaml --redo-intrinsics
+#   python scripts/shadow.py --source multi --config config/fusion_3cam_rs.yaml          # mô phỏng 2 tay
+#   robot thật: config robot TRƯỚC file này (xem config/both_arms_real.yaml), dry-run trước.
+#
+# Xê dịch bất kỳ camera nào (kể cả gập màn hình laptop) sau khi hiệu chuẩn -> chạy lại calibrate_cameras.py.
+# 2 RealSense: mỗi cái một cổng USB 3 riêng (hoặc hub USB 3 có nguồn riêng), không chung cổng với bộ CAN.
+
+fusion:
+  board: {squares_x: 7, squares_y: 5, square_m: 0.04, marker_m: 0.03, dictionary: DICT_5X5_1000}
+  cameras:
+    # Webcam laptop ở giữa: cao ngang ngực, cách người 1,2-1,5 m, thấy trọn ĐẦU-vai-hông-tay (Pose dò người từ mặt).
+    # Cắm RealSense sẽ thêm /dev/video*: kiểm tra webcam vẫn là chỉ số 0 bằng scripts/list_cameras.py.
+    - {name: front, source: 0, latency_s: 0.0, weight: 1.0, pose: true}
+    - {name: right45, source: realsense, serial: "341522301338", pose: true}   # D455
+    - {name: left45, source: realsense, serial: "243122071323", pose: true}    # D435i
+  calib_file: config/cameras_calib_3cam_rs.yaml
+  body_source: triangulate
+  sync: latest
+  pair_wait_s: 0.0
+
+camera:
+  # Kích thước khung webcam (phải giống lúc hiệu chuẩn). Webcam laptop: 1280x720 chỉ được 30 fps ở MJPG.
+  width: 1280
+  height: 720
+  fourcc: MJPG
+  fps: 30
+  v4l2:                           # cần: sudo apt install v4l-utils
+    power_line_frequency: 1       # 50 Hz (điện VN): hết sọc nhấp nháy dưới đèn
+    exposure_dynamic_framerate: 0 # không cho webcam tự hạ fps khi phòng tối
+  realsense:
+    # 848x480: đủ góc ngang của cảm biến màu (D455 ~90°, D435i ~70°); nội tham số đọc từ camera lúc chạy.
+    width: 848
+    height: 480
+    fps: 30
+    spatial_filter: false
+
+filter:
+  arm_shape: {enabled: true}
+  landmark_kalman: {enabled: true}
+
+models:
+  # GPU RTX 3050 (đo 02/10: Pose 5 ms, Hand 5,5 ms). Máy chỉ có CPU (Dell 5490): delegate cpu,
+  # pose_landmarker_lite.task, pose_interval 2-3 (3 camera trên CPU chỉ ~1,5 fps - không đủ chạy robot).
+  delegate: gpu
+  pose: models/pose_landmarker_full.task
+  pose_interval: 1
+  pose_hold_frames: 6
