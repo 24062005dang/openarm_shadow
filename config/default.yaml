@@ -58,7 +58,9 @@ orientation:
   # Tắt (enabled: false) = dò khung thân mỗi khung như trước. require_hips: true = chỉ học khi thấy rõ cả hông.
   body_ref: {enabled: true, learn_s: 1.0, min_vis: 0.6, require_hips: false, max_motion_deg: 10, max_shift_m: 0.05,
              relearn_lost_s: 5.0, shoulder_tol_m: [0.03, 0.08], hip_tol_m: [0.02, 0.06], rot_tol_deg: [5, 15],
-             follow: 0.05, rigid_tol_m: 0.03, adopt_s: 1.0}
+             follow: 0.05, rigid_tol_m: 0.03, adopt_s: 1.0, shoulder_width_tol: 0.15, stale_s: 3.0}
+  # Dịch chuyển thật: 2 vai cùng lệch, bề rộng vai đổi < shoulder_width_tol (15%) liên tục adopt_s. Tham chiếu cũ: mọi
+  # điểm "bị che" liên tục stale_s (3 s) -> nhận vị trí đang đo (người đổi chỗ đứng sau khi học, fusion nhiễu).
 
 # Fusion nhiều camera: chỉ dùng khi chạy --source multi (xem config/fusion_2cam.yaml và docs/FUSION.md).
 fusion:

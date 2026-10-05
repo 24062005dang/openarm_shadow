@@ -207,3 +207,30 @@ def test_bone_length_fix_for_rejected_elbow():
     pipe.kf_rejected["right"] = np.array([False, True, True])
     out = pipe._fix_bone_length("right", np.stack([s, np.array([0, 0, -0.20]), np.array([0.40, 0, -0.20])]))
     assert np.isclose(np.linalg.norm(out[1] - out[0]), 0.30) and np.isclose(np.linalg.norm(out[2] - out[1]), 0.26)
+
+
+def test_person_steps_with_noisy_fusion_is_adopted():
+    """Ảnh chụp 05/10: người đứng chỗ khác lúc học, fusion nhiễu vài cm -> trước đây kẹt ở tham chiếu cũ (cả 4 điểm
+    'bị che', vai phải sai -> cánh tay trên đo 59 cm, J1-J4 tay phải đứng yên)."""
+    ref = learned()
+    rng = np.random.default_rng(5)
+    shift = np.array([-0.15, 0.10, 0.0])                       # bước lại gần camera + sang ngang
+    out = None
+    for k in range(60):                                        # 2 s, nhiễu 2,5 cm mỗi điểm
+        meas = {i: X + shift + rng.normal(0, 0.025, 3) for i, X in PTS.items()}
+        out = ref.gate_points(meas, 1.0 + k / 30)
+    assert np.linalg.norm(ref.points[L_SH] - (PTS[L_SH] + shift)) < 0.06
+    assert np.linalg.norm(out[R_SH] - (PTS[R_SH] + shift)) < 0.06
+
+
+def test_stale_reference_is_replaced_even_when_not_rigid():
+    """Mọi điểm lệch xa liên tục > stale_s (fusion lệch, bề rộng vai đo khác hẳn) -> nhận vị trí đang đo."""
+    ref = learned({**CFG, "stale_s": 1.0})
+    meas = {i: X + [0.0, 0.0, 0.2] for i, X in PTS.items()}
+    meas[L_SH] = meas[L_SH] + [0.12, 0.0, 0.0]                 # dọc đường nối 2 vai: bề rộng lệch 12 cm, không cứng
+    for k in range(20):                                        # < 1 s: vẫn tham chiếu
+        ref.gate_points(meas, 1.0 + k / 30)
+    assert np.allclose(ref.points[R_HIP], PTS[R_HIP], atol=1e-3)
+    for k in range(20, 40):
+        out = ref.gate_points(meas, 1.0 + k / 30)
+    assert np.allclose(out[R_HIP], meas[R_HIP]) and ref.hint == "theo do"   # đã nhận, khung sau theo đo

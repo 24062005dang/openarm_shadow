@@ -49,6 +49,11 @@ class BodyRef:
         self.follow = float(cfg.get("follow", 0.05))
         self.rigid_tol = float(cfg.get("rigid_tol_m", 0.03))
         self.adopt_s = float(cfg.get("adopt_s", 1.0))
+        # Bề rộng vai đo / tham chiếu lệch dưới tỉ lệ này vẫn coi là "khối cứng" (nhiễu fusion vài cm)
+        self.width_tol = float(cfg.get("shoulder_width_tol", 0.15))
+        # Mọi điểm tham chiếu đều đang "bị che" liên tục lâu hơn stale_s: tay không che nổi cả 2 vai + 2 hông lâu như
+        # vậy -> tham chiếu đã cũ (người đổi chỗ đứng), nhận vị trí đang đo.
+        self.stale_s = float(cfg.get("stale_s", 3.0))
         self.reset()
 
     def reset(self):
@@ -56,7 +61,8 @@ class BodyRef:
         self.points = {}       # chỉ số landmark -> vị trí tham chiếu (vai, hông), fusion triangulate
         self.weights = {}      # khung vừa rồi: trọng số điểm đo (1 = dùng đo, 0 = dùng tham chiếu)
         self._samples, self._t0, self._lost_since = [], None, None
-        self._rigid_since = None
+        self._rigid_since = self._rigid_last_ok = None
+        self._all_est_since = None
         self.hint = "dang hoc"
 
     @property
@@ -118,30 +124,41 @@ class BodyRef:
         """Lệch d -> trọng số điểm đo: 1 khi d <= tol[0], 0 khi d >= tol[1], tuyến tính ở giữa."""
         return float(np.clip((tol[1] - d) / max(tol[1] - tol[0], 1e-9), 0.0, 1.0))
 
+    def _adopt(self, meas, hint):
+        """Nhận vị trí đang đo làm tham chiếu mới (điểm nào đo được)."""
+        for i in list(self.points):
+            m = meas.get(i)
+            if m is not None and np.all(np.isfinite(m)):
+                self.points[i] = np.asarray(m, float).copy()
+        self._rigid_since = self._all_est_since = None
+        self.hint = hint
+        return True
+
     def _rigid(self, meas, t):
-        """Mọi điểm tham chiếu đều đo được, đều lệch > tol[0], và khoảng cách đôi một giữ nguyên (khối cứng) liên tục
-        adopt_s -> người xoay / dịch thật: nhận vị trí mới. -> True khi vừa nhận."""
-        ids = list(self.points)
-        moved = len(ids) >= 2 and all(
-            meas.get(i) is not None and np.all(np.isfinite(meas[i])) and
-            np.linalg.norm(meas[i] - self.points[i]) > (self.hip_tol if i in (L_HIP, R_HIP) else self.sh_tol)[0]
-            for i in ids)
+        """Hai vai đều đo được, đều lệch > tol[0] và bề rộng vai giữ gần nguyên (lệch < shoulder_width_tol, khối cứng)
+        liên tục adopt_s -> người xoay / dịch thật: nhận vị trí mới. -> True khi vừa nhận.
+
+        Chỉ dựa vào 2 vai: trước đây đòi MỌI điểm (cả hông) giữ khoảng cách đôi một trong rigid_tol_m (3 cm), nhiễu
+        fusion vài cm làm điều kiện gần như không bao giờ đạt -> tham chiếu kẹt ở chỗ cũ khi người đổi chỗ đứng."""
+        sh = [i for i in (L_SH, R_SH) if i in self.points]
+        ok = len(sh) == 2 and all(meas.get(i) is not None and np.all(np.isfinite(meas[i])) for i in sh)
+        moved = ok and all(np.linalg.norm(meas[i] - self.points[i]) > self.sh_tol[0] for i in sh)
         if moved:
-            moved = all(abs(np.linalg.norm(meas[a] - meas[b]) - np.linalg.norm(self.points[a] - self.points[b]))
-                        < self.rigid_tol for k, a in enumerate(ids) for b in ids[k + 1:])
+            w_ref = np.linalg.norm(self.points[L_SH] - self.points[R_SH])
+            w_now = np.linalg.norm(meas[L_SH] - meas[R_SH])
+            moved = abs(w_now - w_ref) < max(self.rigid_tol, self.width_tol * w_ref)
         if not moved:
-            self._rigid_since = None
+            # vài khung nhiễu lẻ (bề rộng vai vọt quá ngưỡng 1 khung) không đặt lại đồng hồ; hỏng liên tục > 0,3 s mới đặt
+            if self._rigid_last_ok is None or t - self._rigid_last_ok > 0.3:
+                self._rigid_since = None
             return False
+        self._rigid_last_ok = t
         if self._rigid_since is None:
             self._rigid_since = t
         if t - self._rigid_since < self.adopt_s:
             self.hint = f"than dich chuyen? {t - self._rigid_since:.1f}s"
             return False
-        for i in ids:
-            self.points[i] = np.asarray(meas[i], float).copy()
-        self._rigid_since = None
-        self.hint = "nhan vi tri moi"
-        return True
+        return self._adopt(meas, "nhan vi tri moi")
 
     def gate_points(self, meas, t):
         """Fusion: meas {chỉ số: điểm đo (NaN nếu không đo được)} -> {chỉ số: điểm dùng}. Cập nhật tham chiếu."""
@@ -158,11 +175,22 @@ class BodyRef:
             else:
                 d = float(np.linalg.norm(m - ref))
                 w = self._weight(d, tol)
-                if d < tol[0]:
-                    self.points[i] = ref + self.follow * (m - ref)       # trôi chậm theo khi khớp
+                if w > 0:                    # trôi chậm theo khi khớp (cả vùng trộn, theo trọng số): không tích lệch
+                    self.points[i] = ref + self.follow * w * (m - ref)
             self.weights[i] = w
             out[i] = self.points[i] if w <= 0 else w * np.asarray(m, float) + (1 - w) * self.points[i]
             n_est += w < 0.5
+        if not adopted:                      # mọi điểm "bị che" quá lâu: tham chiếu cũ
+            if n_est == len(self.points):
+                self._all_est_since = t if self._all_est_since is None else self._all_est_since
+                if t - self._all_est_since >= self.stale_s:
+                    self._adopt(meas, "tham chieu cu: nhan vi tri moi")
+                    adopted = True
+                    out = {i: self.points[i] for i in self.points}
+                    self.weights = {i: 1.0 for i in self.points}
+                    n_est = 0
+            else:
+                self._all_est_since = None
         if not adopted and n_est:
             self.hint = f"uoc luong {n_est} diem (bi che)"
         elif not adopted and self._rigid_since is None:
