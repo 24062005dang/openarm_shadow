@@ -34,25 +34,6 @@ BONES = ((0, 1), (1, 2), (2, 3), (3, 4), (0, 5), (5, 6), (6, 7), (7, 8), (0, 9),
          (0, 13), (13, 14), (14, 15), (15, 16), (0, 17), (17, 18), (18, 19), (19, 20))
 
 
-def assign_hands_to_wrists(hand_roots, wrists, gate):
-    """hand_roots: [(x, y)] cổ tay của từng bàn tay MediaPipe; wrists: {side: (x, y) hoặc None}; gate: khoảng
-    cách tối đa (cùng đơn vị). Trả list side|None theo thứ tự hand_roots, mỗi side dùng tối đa 1 lần.
-    Ghép cặp theo khoảng cách tăng dần (với 2 tay x 2 cổ tay, kết quả trùng tối ưu tổng khoảng cách)."""
-    pairs = []
-    for i, r in enumerate(hand_roots):
-        for side, wr in wrists.items():
-            if wr is None or not np.all(np.isfinite(wr)):
-                continue
-            d = float(np.linalg.norm(np.asarray(r, float) - np.asarray(wr, float)))
-            if d < gate:
-                pairs.append((d, i, side))
-    out, used = [None] * len(hand_roots), set()
-    for d, i, side in sorted(pairs):
-        if out[i] is None and side not in used:
-            out[i], used = side, used | {side}
-    return out
-
-
 def hand_forearm_angle(R_hand, elbow, wrist):
     """Góc (độ) giữa hướng ngón tay (cột x của khung bàn tay) và cẳng tay (khuỷu -> cổ tay)."""
     if R_hand is None or elbow is None or wrist is None:
@@ -115,7 +96,7 @@ class PalmModel:
 
     def estimate(self, pts, weights=None, quality=1.0):
         """-> (R, center, rms_m, mode). mode: "KABSCH", "3PT" (chưa có khuôn) hoặc lý do bị loại."""
-        from .perception import palm_frame_from_depth
+        from .perception.hand_geometry import palm_frame_from_depth
         p = np.asarray(pts, float)
         if self.template is None:
             R, center = palm_frame_from_depth(p, side=self.side)
@@ -200,7 +181,7 @@ class OrientationFusion:
     def update(self, base, base_conf=1.0, extras=(), base_strong=False):
         """base: 3x3 hoặc None; extras: [(R, conf, tên)]; base_strong: base đã được >= 2 camera xác nhận (tự nó
         tính là 2 nguồn). -> (R, trạng thái, độ tin cậy, nguồn đã dùng)."""
-        from .perception import slerp_rotation
+        from .core.rotations import slerp_rotation
         obs = [(np.asarray(R, float), float(c), n) for R, c, n in extras if R is not None and c > 0]
         if base is None:
             if not obs:

@@ -1,10 +1,10 @@
 import numpy as np
 import pytest
 
-from openarm_shadow.perception import (deproject_pixel, fit_metric_depth, fuse_hand_landmarks,
-                                       fit_palm_plane, open_finger_count, palm_frame_from_depth,
-                                       rotation_distance, sample_depth, sample_depth_with_confidence,
-                                       slerp_rotation)
+from openarm_shadow.core.rotations import rotation_distance, slerp_rotation
+from openarm_shadow.perception import (deproject_pixel, fit_metric_depth, fit_palm_plane, fuse_hand_landmarks,
+                                       open_finger_count, palm_frame_from_depth, sample_depth,
+                                       sample_depth_with_confidence)
 
 
 def test_deproject_center_and_offset():

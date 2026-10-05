@@ -27,11 +27,11 @@ import yaml
 
 from .cameras.multicam import MultiSample
 from .core.geometry import unit
+from .core.rotations import rotation_distance, slerp_rotation
 from .handfusion import HandShape, OrientationFusion, PalmModel, hand_forearm_angle
-from .perception import (ArmObs, Frame, H_INDEX_MCP, H_INDEX_TIP, H_MIDDLE_MCP, H_PINKY_MCP, H_THUMB_TIP,
-                         H_WRIST, L_EL, L_HIP, L_SH, L_WR, R_EL, R_HIP, R_SH, R_WR, ARM_IDX, _shoulders, body_frame,
-                         open_finger_count, palm_frame_from_depth, rotation_distance, sample_depth,
-                         slerp_rotation)
+from .perception import (ARM_IDX, H_INDEX_MCP, H_INDEX_TIP, H_MIDDLE_MCP, H_PINKY_MCP, H_THUMB_TIP, H_WRIST, L_EL,
+                         L_HIP, L_SH, L_WR, R_EL, R_HIP, R_SH, R_WR, ArmObs, Frame, body_frame, open_finger_count,
+                         palm_frame_from_depth, sample_depth, shoulders)
 
 BODY_IDS = (L_SH, R_SH, L_EL, R_EL, L_WR, R_WR, L_HIP, R_HIP)
 PALM_IDS = (H_WRIST, H_INDEX_MCP, H_MIDDLE_MCP, 13, H_PINKY_MCP)
@@ -450,7 +450,7 @@ class MultiViewPerception:
             if np.all(np.isfinite(P)) and z > 0.3:
                 scale = cam.fx * float(pc.get("shoulder_m", 0.35)) / z
                 d = [np.linalg.norm(sh[0] * [w, h] - P.mean(0)) / scale if sh is not None else np.inf
-                     for sh in map(_shoulders, cands)]
+                     for sh in map(shoulders, cands)]
                 k = int(np.argmin(d))
                 ok = d[k] < float(pc.get("lock_dist", 1.0))
                 self.person_match[v] = {"mode": "3D", "ok": bool(ok), "err": float(d[k])}
