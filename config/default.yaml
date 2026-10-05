@@ -69,9 +69,6 @@ fusion:
   depth_consistency_m: 0.04  # depth lệch nghiệm 2D hơn mức này thì không dùng
   min_visibility: 0.3        # điểm Pose có visibility thấp hơn thì bỏ ở camera đó
   depth: {patch_radius: 3, hand_patch_radius: 2, min_depth_m: 0.3, max_depth_m: 6.0, max_local_delta_m: 0.15}
-  # alpha: nhận hướng mới khi nhìn kém (mượt), alpha_max: khi nhìn rõ (ít trễ để cổ tay theo kịp cánh tay)
-  orientation: {alpha: 0.6, alpha_max: 0.85, hold_frames: 8, ambiguous_quality: 0.35, max_jump_deg: 100,
-                confirm_frames: 4}
   # triangulate: vai/khuỷu/cổ tay triangulate từ mọi camera (mọi camera chạy Pose, nặng hơn);
   # front: vai/khuỷu/cổ tay từ Pose camera 0, camera khác chỉ chạy Hand (nhẹ, mượt; như bản Openarm_Teleop)
   body_source: triangulate

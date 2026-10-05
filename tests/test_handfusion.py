@@ -4,11 +4,11 @@ import types
 
 import numpy as np
 
-from openarm_shadow.core.geometry import rot, unit
+from openarm_shadow.core.geometry import unit
 from openarm_shadow.handfusion import HandShape, PalmModel, hand_forearm_angle
 from openarm_shadow.perception import assign_hands_to_wrists
 from openarm_shadow.cameras import MultiSample
-from openarm_shadow.multiview import HandOrientationTracker, MultiViewPerception
+from openarm_shadow.multiview import MultiViewPerception
 from openarm_shadow.perception import palm_frame_from_depth
 
 from test_multiview import FakeView, SUBJECT, hand_points, human_world, two_cams
@@ -94,14 +94,6 @@ def test_hand_forearm_angle():
     assert hand_forearm_angle(R, [0, 0, 0], [-1, 0, 0]) > 170       # bàn tay chỉ ngược cẳng tay: sai
 
 
-def test_tracker_less_lag_when_view_is_clear():
-    R0, R1 = np.eye(3), rot([0, 0, 1], np.deg2rad(40))
-    slow, fast = HandOrientationTracker(alpha=0.5, alpha_max=0.9), HandOrientationTracker(alpha=0.5, alpha_max=0.9)
-    slow.update(R0, 1.0), fast.update(R0, 1.0)
-    Rs, _ = slow.update(R1, 0.36)                   # nhìn kém: làm mượt nhiều
-    Rf, _ = fast.update(R1, 1.0)                    # nhìn rõ: bám nhanh
-    assert ang(Rf, R1) < ang(Rs, R1)
-    assert ang(Rf, R1) < 5
 
 
 def _hand_R():

@@ -7,8 +7,7 @@ import pytest
 
 from openarm_shadow.core.geometry import rot, unit
 from openarm_shadow.cameras import MultiSample
-from openarm_shadow.multiview import (CameraModel, HandOrientationTracker, MultiViewPerception, fuse_point,
-                                      triangulate_weighted)
+from openarm_shadow.multiview import CameraModel, MultiViewPerception, fuse_point, triangulate_weighted
 from openarm_shadow.perception import Frame, ArmObs, palm_frame_from_depth, body_frame
 
 K = np.array([[600.0, 0, 320], [0, 600.0, 240], [0, 0, 1]])
@@ -143,18 +142,6 @@ def test_palm_normal_no_flip_when_edge_on_to_front_camera():
     assert worst < 25.0, worst
 
 
-def test_tracker_keeps_sign_when_all_views_edge_on():
-    tr = HandOrientationTracker(alpha=1.0)
-    R0 = np.eye(3)
-    tr.update(R0, 1.0)
-    flipped = R0 @ np.diag([1.0, -1.0, -1.0])
-    R, mode = tr.update(flipped, 0.1)             # quan sát lật dấu, mọi camera nhìn cạnh
-    assert np.allclose(R, R0) and mode == "SIGN-FIX"
-    for _ in range(3):
-        R, mode = tr.update(flipped, 0.9)         # nhìn rõ nhưng mới 1-3 khung: giữ
-    assert mode == "HOLD"
-    R, mode = tr.update(flipped, 0.9)             # lặp lại đủ 4 khung: nhận là xoay thật
-    assert np.allclose(R, flipped)
 
 
 # ---------------- end-to-end với MediaPipe giả ----------------

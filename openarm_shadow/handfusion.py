@@ -12,7 +12,7 @@ Các khối (dùng trong multiview.MultiViewPerception; hàm gán tay cũng dùn
   và "khuôn" lòng bàn tay học từ chính người dùng. Dùng cả 5 điểm (không chỉ 3 như palm_frame_from_depth), thiếu
   1-2 gốc ngón vẫn chạy, bỏ điểm lệch nhất nếu lệch > outlier_m, khớp kém (rms > max_rms_m) thì bỏ khung.
   Lưu ý: lòng bàn tay gần phẳng nên ảnh gương trỏ<->út vẫn trùng với khuôn sau khi quay 180° quanh trục ngón;
-  loại nhập nhằng dấu này vẫn do HandOrientationTracker (SIGN-FIX) xử lý.
+  loại nhập nhằng dấu này do OrientationFusion (2 giả thuyết) xử lý.
 - OrientationFusion: hướng bàn tay từ nhiều nguồn (3D, MediaPipe world từng camera, depth), 2 giả thuyết chống lật,
   nghi ngờ thì đóng băng cổ tay (ý tưởng từ bản Openarm_Teleop của nhóm).
 - hand_forearm_angle: góc giữa hướng ngón tay và cẳng tay; cổ tay người gập tối đa ~80°, nên góc lớn hơn
