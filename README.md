@@ -108,7 +108,7 @@ python scripts/shadow.py --robot openarm --arms right --config config/first_real
 python scripts/shadow.py --robot openarm --arms right --config config/d455_wrist_real.yaml # sau khi xác minh J5–J7
 ```
 
-Hướng bàn tay tự hiệu chuẩn khi tay thả xuôi, lòng bàn tay hướng vào đùi và đứng yên khoảng 0,6 s; màn hình báo
+Hướng bàn tay tự hiệu chuẩn khi tay thả xuôi, xoè bàn tay, **lòng bàn tay nhìn camera** và đứng yên khoảng 0,6 s; màn hình báo
 `Auto calib ... OK`. Phím khi chạy: `SPACE` engage / nhả (ly hợp) · `c` hiệu chuẩn lại thủ công · `b` học lại khung
 thân · `p` về tư thế nghỉ · `q`/`Esc` về tư thế nghỉ rồi thoát.
 
@@ -166,6 +166,10 @@ Như chế độ sim: giữ READY 3 s là tự engage, không hỏi `yes`. Tuỳ
 - Chỉ dùng hướng nên tay người dài hay ngắn không ảnh hưởng. Đổi lại, vị trí kẹp robot không trùng vị trí bàn tay người:
   hợp với động tác biểu diễn, chưa hợp gắp chính xác.
 - Nhiều nghiệm → chọn nghiệm trong giới hạn khớp và gần tư thế trước nhất.
+- Hướng kẹp: hai ngón kẹp đóng / mở theo **pháp tuyến lòng bàn tay** (mặt phẳng hai ngón kẹp vuông góc lòng bàn tay,
+  như ngón cái và ngón trỏ khi gắp). Tay xuôi, ngón cái ra trước (hoặc cẳng tay ra trước, ngón cái hướng lên) ⟷
+  J5 = 0, giữa tầm xoay; ngửa / úp hết cỡ ⟷ J5 = ±90°. Tư thế hiệu chuẩn (lòng bàn tay nhìn camera) ⟷ J5 = +90° tay
+  phải, −90° tay trái (`Arm.calib_wrist`).
 - Kẹp: r = (đầu ngón cái − đầu ngón trỏ) / chiều dài bàn tay, chụm = đóng (0), xoè = mở hẳn (1), mở liên tục theo
   hai ngón (`openarm_shadow/mapping/grip.py`). Phím **g** khi chạy: chụm hết cỡ rồi xoè hết cỡ trong 4 s để đo theo tay
   mình (số in ra terminal, ghi vào `grip:` để dùng lần sau). Chỉ muốn vài mức: `grip.levels: [0, 0.5, 1]`.

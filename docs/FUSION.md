@@ -326,7 +326,7 @@ Vẫn nên tránh tư thế mép tay chĩa thẳng vào cả hai camera: đặt 
 nhìn được lòng/mu bàn tay. Thấy `ACQUIRE`/`HOLD` lặp lại ở một tư thế = tư thế đó không quan sát được, đừng điều
 khiển cổ tay ở tư thế đó.
 
-Hiệu chuẩn tay tự động (tay thả xuôi, lòng bàn tay vào đùi) vẫn như cũ, tính theo camera đầu tiên.
+Hiệu chuẩn tay tự động (tay thả xuôi, lòng bàn tay nhìn camera) vẫn như cũ, tính theo camera đầu tiên.
 
 ## Cách hợp nhất một điểm (`fuse_point`)
 

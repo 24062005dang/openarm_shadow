@@ -39,6 +39,16 @@ def default_hand_neutral(human_side):
     return _HAND_NEUTRAL[human_side].copy()
 
 
+# Tư thế HIỆU CHUẨN bàn tay: tay thả xuôi, lòng bàn tay nhìn camera (ra trước) - camera thấy rõ lòng bàn tay nhất.
+# Cùng quy ước (x ngón, z pháp tuyến lòng bàn tay, y = z × x) cho cả hai tay: x xuống, z ra trước, y sang trái.
+_PALM_FORWARD = np.column_stack([_DOWN, _LEFT, _FWD])
+
+
+def palm_forward_hand(human_side):
+    """Khung bàn tay người ở tư thế hiệu chuẩn (tay xuôi, lòng bàn tay ra trước), trong khung thân."""
+    return _PALM_FORWARD.copy()
+
+
 @dataclass
 class RetargetInfo:
     err_upper_deg: float = float("nan")

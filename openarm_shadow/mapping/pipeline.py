@@ -86,11 +86,12 @@ class ShadowPipeline:
         return m
 
     def _neutral_reference(self, side, ob):
-        """Giữ J1–J4 theo tư thế tay hiện tại, đặt J5–J7=0 để calib ở vị trí dễ thấy camera."""
+        """Giữ J1–J4 theo tư thế tay hiện tại; J5–J7 = góc robot ứng với tư thế hiệu chuẩn (lòng bàn tay nhìn camera),
+        xem Arm.calib_wrist: hai ngón kẹp đóng / mở theo pháp tuyến lòng bàn tay."""
         u = unit(ob.e - ob.s)
         l = unit(ob.w - ob.e)
         q_ref, _ = self.rt[side].solve(u, l, None, self.q_prev[side])
-        q_ref[4:7] = 0.0
+        q_ref[4:7] = self.arms[side].calib_wrist
         return q_ref
 
     def calibrate_hand_neutral(self, frame: Frame):

@@ -28,7 +28,7 @@ import numpy as np
 from openarm_shadow.filtering.filters import EMA, ArmShape, JointFilter, PointKalman
 from openarm_shadow.mapping.grip import GripMapper
 from openarm_shadow.core.kinematics import ArmKinematics
-from openarm_shadow.mapping.retarget import ArmRetargeter, default_hand_neutral, mirror_rotation
+from openarm_shadow.mapping.retarget import ArmRetargeter, default_hand_neutral, mirror_rotation, palm_forward_hand
 
 SIDES = ("right", "left")
 
@@ -65,6 +65,16 @@ class Arm:
         # hướng trung tính mặc định theo đúng bàn tay người điều khiển tay này
         Hn = default_hand_neutral(self.human_side)
         self.rt.set_hand_neutral(mirror_rotation(Hn) if self.mirrored else Hn)
+        # Góc J5-J7 robot ứng với tư thế HIỆU CHUẨN (tay xuôi, lòng bàn tay nhìn camera) theo ánh xạ hình học trên:
+        # tay xuôi + ngón cái ra trước <-> J5-J7 = 0, khi đó hai ngón kẹp đóng / mở theo PHÁP TUYẾN lòng bàn tay
+        # (mặt phẳng hai ngón kẹp vuông góc lòng bàn tay, như ngón cái - ngón trỏ khi gắp). Lòng bàn tay ra trước là
+        # ngửa cổ tay 90° so với tư thế đó -> J5 = ±90°. Hiệu chuẩn gán tư thế đo được với góc này (không phải
+        # J5-J7 = 0 như trước: kẹp bị lệch 90°, đóng / mở trong mặt phẳng bàn tay). Ngón cái ra trước nằm giữa tầm
+        # xoay cổ tay người nên dùng được hết J5 ±90°.
+        Hc = palm_forward_hand(self.human_side)
+        down = np.array([0.0, 0.0, -1.0])
+        q_cal, _ = self.rt.solve(down, down, mirror_rotation(Hc) if self.mirrored else Hc, np.zeros(7))
+        self.calib_wrist = q_cal[4:7].copy()
 
         fc = cfg["filter"]
         self.filt = JointFilter(8, fc["min_cutoff"], fc["beta"], fc["deadband_deg"], fc["jump_deg"],
