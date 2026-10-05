@@ -7,6 +7,26 @@
   Thiếu hông (ngồi sau bàn) thì lấy hướng "lên" của camera.
 - Vì hai khung cùng quy ước, hướng đoạn tay người đưa thẳng vào retarget, không cần hiệu chuẩn chiều dài.
 
+## Lớp Arm (openarm_shadow/arm.py)
+Mỗi tay robot là một `Arm(side)`; trái và phải dùng chung một lớp, `ShadowPipeline.arms` là `{side: Arm}`. `Arm` giữ
+động học, bộ giải retarget, bộ lọc khớp, Kalman / EMA điểm mốc, kẹp, trạng thái hiệu chuẩn tay và các biến theo khung.
+Các thuộc tính cũ (`pipe.held["right"]`, `pipe.rt["left"]`...) vẫn dùng được: chúng là view trỏ vào `Arm`.
+
+Quan hệ trái / phải (đọc từ URDF, bảng trong `ROS inference.md` và MJCF v1; `tests/test_arm.py` kiểm tra ba nguồn):
+
+| Khớp | Giới hạn trái so với phải | Trục khớp | Dấu khi phản chiếu tư thế (`MIRROR_SIGNS`) |
+| --- | --- | --- | --- |
+| J1, J2 | đảo (trái = −phải): J1 −200..80° / −80..200°, J2 −190..10° / −10..190° | giống nhau | −1 |
+| J3, J5, J6 | đối xứng quanh 0 (±90°, ±90°, ±45°), giống nhau | giống nhau | −1 |
+| J4 | giống nhau (0..140°) | giống nhau | +1 |
+| J7 | đối xứng (±90°) | tay trái ngược tay phải (`0 -1 0`) | −1 |
+
+Chỉ J1, J2 có giới hạn ngược nhau, nhưng phản chiếu tư thế (tay trái = ảnh gương tay phải) đảo dấu mọi khớp trừ J4:
+hướng mọi link của tay trái trùng khít ảnh gương của tay phải (sai lệch 0°). Chỉ đảo J1, J2 thì sai tới ~157° khi cả 7
+khớp cử động. Vị trí khớp lệch tới ~6 cm vì URDF không lật các độ lệch cơ khí giữa link; retarget chỉ dùng hướng nên không
+ảnh hưởng. Chế độ `mapping.mode: mirror` hiện phản chiếu quan sát rồi giải riêng cho từng tay (kết quả khớp
+`MIRROR_SIGNS * góc tay phải`, có test).
+
 ## Retarget (openarm_shadow/retarget.py)
 OpenArm v1.0 có 7 khớp quay, hai trục liên tiếp luôn vuông góc (test `test_consecutive_axes_perpendicular`),
 ở q = 0 trục J3 và J5 chạy dọc cánh tay trên và cẳng tay. Nên:

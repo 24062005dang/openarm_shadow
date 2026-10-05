@@ -10,7 +10,7 @@ Bắt đầu từ [`docs/README.md`](docs/README.md).
 Webcam / điện thoại ──► MediaPipe Pose + Hand ──► khung thân người ──► retarget kiểu SEW-Mimic ──► lọc từng khớp
                                                                                   │
                          OpenArm v1.0 (CAN-FD) ◄── robot backend ◄── SafetyGate ◄──┘
-                         hoặc robot mô phỏng
+                         hoặc robot mô phỏng: hình que (sim) / MuJoCo 3D (mujoco)
 ```
 
 | Khâu | File | Lấy ý tưởng từ |
@@ -22,6 +22,8 @@ Webcam / điện thoại ──► MediaPipe Pose + Hand ──► khung thân n
 | An toàn | `openarm_shadow/safety.py` | Ly hợp + dead-man + tăng tốc mềm (Marionette, kinetic-arm-lab), capsule chống hai tay va nhau (SEW-Mimic) |
 | Fusion 2 camera (`--source multi`) | `openarm_shadow/multiview.py`, `calibration.py` | Pose2Sim (triangulate có trọng số), caliscope/aniposelib (ChArUco), stereohand (đồng bộ) — xem `docs/FUSION.md` |
 | Robot thật | `openarm_shadow/robot/openarm_can_robot.py` | `openarm_can`, gain chính thức v1.0 |
+| Robot mô phỏng MuJoCo (`--robot mujoco`) | `openarm_shadow/robot/mujoco_robot.py` + `openarm_mujoco/v1/` | MJCF của `enactic/openarm_mujoco` (góc khớp = góc URDF, FK lệch 0 mm) |
+| Một tay robot (trái / phải dùng chung) | `openarm_shadow/arm.py` | Lớp `Arm`: động học, bộ giải, bộ lọc, kẹp, hiệu chuẩn của một tay; `MIRROR_SIGNS` (J1,J2,J3,J5,J6,J7 đảo dấu, J4 giữ) |
 | Động học OpenArm v1.0 | `openarm_shadow/kinematics.py` + `data/openarm_v10_arms.json` | URDF của `enactic/openarm_description` |
 
 Toàn bộ code tự viết; không chép code từ các repo trên (phần lớn không có license).
@@ -34,8 +36,12 @@ lọc số đọc rác.
 
 - Đã kiểm tra (trên máy không có camera/robot): động học, retarget (thử ngược 500 tư thế, sai lệch < 1e-10°),
   bộ lọc, SafetyGate, luồng chạy sim với dữ liệu người giả lập, backend CAN với `openarm_can` giả lập.
-  `pytest` 110/110 đạt (gồm test lọc số đọc rác của backend CAN, fusion 2 camera và làm sạch bàn tay giả lập).
-- `scripts/demo_sim.py` chạy trọn luồng pipeline → SafetyGate → robot mô phỏng với người giả lập (đã chạy được).
+  `pytest` 167/167 đạt (gồm test lọc số đọc rác của backend CAN, fusion 2 camera, làm sạch bàn tay giả lập và
+  backend MuJoCo).
+- `scripts/demo_sim.py` chạy trọn luồng pipeline → SafetyGate → robot mô phỏng với người giả lập (đã chạy được,
+  cả hình que lẫn MuJoCo).
+- Robot MuJoCo (`--robot mujoco`, 05/10): chạy được với `demo_sim.py` và webcam laptop. Mô hình MJCF v1 trùng
+  động học `kinematics.py`; giới hạn J4 của MJCF hẹp hơn URDF (128-131°) nên dùng kèm `config/mujoco_sim.yaml`.
 - Đã chạy với webcam thật trên laptop của nhóm (mô phỏng, 28/09): nhận diện và bám theo tay.
 - Tay phải đã chạy trên OpenArm thật (30/09: J1–J4; 02/10: J1–J7 + kẹp, 2 camera). Tay trái: không phải zero sai mà
   J1/J2 lệch 180° (docs/SAFETY.md), offset ở `config/both_arms_real.yaml`, CHƯA chạy thật.
@@ -52,18 +58,20 @@ python3 -m venv --system-site-packages .venv   # system-site để thấy python
 source .venv/bin/activate
 pip install -r requirements.txt
 bash scripts/download_models.sh                # model MediaPipe vào models/
-python -m pytest -q                            # 141 test phải đạt
+python -m pytest -q                            # 167 test phải đạt (test MuJoCo tự bỏ qua nếu chưa cài mujoco)
 python scripts/check_kinematics.py             # in trục khớp, thử ngược retarget
 ```
 
 Robot thật cần thêm `openarm_can` (xem `tools/bringup/`): `sudo apt install python3-openarm-can`.
 RealSense D455 cần thêm: `pip install -e '.[realsense]'` (SDK đã thử với `pyrealsense2` 2.58.1).
+Robot mô phỏng MuJoCo cần thêm: `pip install -e '.[mujoco]'` (đã thử `mujoco` 3.14) và mô hình ở `openarm_mujoco/v1/`.
 
 ## Chạy
 
 ```bash
 # 0) Mô phỏng không cần camera, model hay robot: người giả lập làm vài động tác
 python scripts/demo_sim.py                      # q/Esc để thoát; --out demo.mp4 để ghi video
+python scripts/demo_sim.py --robot mujoco --config config/mujoco_sim.yaml   # thêm cửa sổ MuJoCo 3D
 
 # 1) Mô phỏng với camera + hình que robot. Luôn chạy bước này trước robot thật.
 python scripts/shadow.py                        # mặc định: RealSense (camera.index trong config)
@@ -74,9 +82,25 @@ python scripts/shadow.py --source 0              # webcam laptop: không có dep
 python scripts/shadow.py --source multi --arms right --config config/fusion_2cam.yaml  # 2 camera, xem docs/FUSION.md
 # robot thật + fusion, cổ tay nhanh (vẫn giới hạn tốc độ): xem docs/FUSION.md bước 6 (config/fusion_real_fast.yaml)
 
+# 1b) Như bước 1 nhưng robot là OpenArm v1 trong MuJoCo (vật lý, gain v1.0, bù trọng lực) thay hình que.
+#     config/mujoco_sim.yaml luôn đặt SAU CÙNG. Thêm --robot mujoco vào bất kỳ lệnh nào ở bước 1.
+python scripts/shadow.py --robot mujoco --config config/mujoco_sim.yaml                      # D455
+python scripts/shadow.py --robot mujoco --source 0 --arms right --config config/mujoco_sim.yaml  # webcam laptop
+python scripts/shadow.py --robot mujoco --source multi --arms right \
+    --config config/fusion_2cam.yaml --config config/mujoco_sim.yaml                         # 2 camera
+python scripts/shadow.py --robot mujoco --source multi \
+    --config config/fusion_3cam_rs.yaml --config config/mujoco_sim.yaml                      # 3 camera, 2 tay
+# 3 camera (webcam + D455 + D435i): đủ các bước kiểm tra camera, in bảng, hiệu chuẩn, mô phỏng, robot thật trong
+# docs/FUSION.md mục "Fusion 3 camera". Tóm tắt:
+#   python scripts/list_cameras.py
+#   python scripts/make_charuco_board.py --config config/fusion_3cam_rs.yaml -o charuco_3cam_a4.png
+#   python scripts/calibrate_cameras.py --config config/fusion_3cam_rs.yaml --redo-intrinsics
+#   python scripts/shadow.py --source multi --config config/fusion_3cam_rs.yaml
+
 # 2) Chế độ offline: video quay sẵn -> quỹ đạo (thử pipeline khi chưa có robot, thu demo cho IL)
 python scripts/offline_retarget.py demo.mp4 -o demo.npz --show
 python scripts/replay_npz.py demo.npz            # xem lại trên robot mô phỏng
+python scripts/replay_npz.py demo.npz --robot mujoco --config config/mujoco_sim.yaml   # xem lại trong MuJoCo
 
 # 3) OpenArm thật (làm theo docs/SAFETY.md)
 python scripts/shadow.py --robot openarm --dry-run                  # motor TẮT: chỉ đọc, kiểm tra chiều khớp
@@ -85,8 +109,25 @@ python scripts/shadow.py --robot openarm --arms right --config config/d455_wrist
 ```
 
 Hướng bàn tay tự hiệu chuẩn khi tay thả xuôi, lòng bàn tay hướng vào đùi và đứng yên khoảng 0,6 s; màn hình báo
-`Auto calib ... OK`. Phím khi chạy: `SPACE` engage / nhả (ly hợp) · `c` hiệu chuẩn lại thủ công · `p` về tư thế
-nghỉ · `q`/`Esc` về tư thế nghỉ rồi thoát.
+`Auto calib ... OK`. Phím khi chạy: `SPACE` engage / nhả (ly hợp) · `c` hiệu chuẩn lại thủ công · `b` học lại khung
+thân · `p` về tư thế nghỉ · `q`/`Esc` về tư thế nghỉ rồi thoát.
+
+Tham chiếu thân (`orientation.body_ref`, mặc định bật): lúc đầu đứng thẳng, thả tay xuôi khoảng 1 s để học tham
+chiếu thân (màn hình `than: theo do`). Chưa học xong thì chưa READY / chưa engage. Sau đó mỗi khung so vai/hông đo
+được với tham chiếu, lọc theo **độ nhất quán** chứ không theo độ tin cậy (tay che thân thì MediaPipe vẫn báo vai/hông
+"thấy rõ" nhưng đặt sai chỗ):
+
+- lệch ít (vai < 3 cm, hông < 2 cm): dùng điểm đo, tham chiếu trôi chậm theo, nên cử động thật nhỏ vẫn qua;
+- lệch nhiều (vai > 8 cm, hông > 6 cm): coi là bị che, dùng tham chiếu (`than: uoc luong N diem`); ở giữa trộn mềm;
+- cả thân dịch như một khối cứng liên tục 1 s (bước sang, xoay người): nhận vị trí mới. Chỉ vài điểm lệch, thân méo
+  (tay che) thì không nhận.
+
+Fusion triangulate lọc từng điểm vai/hông rồi dựng lại khung thân; 1 camera chỉ lọc hướng khung thân. Vai bị che hẳn
+vẫn chạy tiếp bằng tham chiếu. Ảnh camera (fusion) vẽ thân đang dùng (xanh ngọc; điểm đang ước lượng: vòng cam) và
+cánh tay hợp nhất (tím) thay vai/hông thô; khung xương xanh lá còn lại là kết quả thô của từng camera.
+Khuỷu / cổ tay (khi bật `filter.landmark_kalman`, có sẵn trong config 3 camera): điểm đo vọt xa dự đoán Kalman thì bị
+loại, dùng dự đoán đặt lại đúng độ dài xương đã học; lệch liên tục vài khung thì nhận (chuyển động nhanh thật).
+Phím `b`: học lại tham chiếu thân (và hiệu chuẩn lại bàn tay). Tắt: `orientation.body_ref.enabled: false`.
 
 Dùng điện thoại làm camera: cài app phát luồng video (vd. DroidCam, IP Webcam) rồi `--source http://<ip>:<port>/video`.
 
@@ -98,10 +139,21 @@ Khi bàn tay xòe, point cloud lòng bàn tay được fit thành mặt phẳng 
 orientation. Trục đỏ = hướng ngón, xanh lá = ngang lòng bàn tay, xanh dương = pháp tuyến. `PLANE`, `LANDMARK`,
 `HOLD`, `NONE` lần lượt cho biết nguồn/ trạng thái orientation; dữ liệu này điều khiển J5–J7 trong mô phỏng.
 
+Dùng 3 camera (webcam laptop ở giữa + D455 lệch 45° phía tay phải + D435i lệch 45° phía tay trái, 2 tay): làm theo
+[`docs/FUSION.md`](docs/FUSION.md) mục "Fusion 3 camera" (`config/fusion_3cam_rs.yaml`).
+
 Dùng 2 camera (webcam laptop trực diện + D435i lệch 45°): làm theo [`docs/FUSION.md`](docs/FUSION.md) — xem chỉ số
 webcam bằng `scripts/list_cameras.py`, in bảng `scripts/make_charuco_board.py`, hiệu chuẩn 1 lần bằng
 `scripts/calibrate_cameras.py`, rồi chạy `--source multi`. Robot thật: `--config config/first_real.yaml --config
 config/fusion_2cam.yaml` (thứ tự này).
+
+Dùng robot MuJoCo (`--robot mujoco`): thay robot "lý tưởng" (đo = lệnh) bằng OpenArm v1 trong MuJoCo. Vẫn đi qua
+đúng pipeline và SafetyGate như robot thật, chỉ khác backend (`openarm_shadow/robot/mujoco_robot.py`). Có hai cửa sổ:
+cửa sổ OpenCV như cũ (camera + hình que; nét **xanh lá** = góc thật trong MuJoCo, để thấy robot trễ / võng so với
+lệnh) và cửa sổ MuJoCo 3D (chạy ở tiến trình riêng, chỉ để xem: kéo robot bằng chuột không tác động vào mô phỏng).
+Như chế độ sim: giữ READY 3 s là tự engage, không hỏi `yes`. Tuỳ chọn trong `robot.mujoco` (`config/default.yaml`):
+`mode: physics` (actuator kp/kv như gain v1.0, mặc định) hoặc `kinematic` (robot đi đúng lệnh), `gravity_comp`,
+`viewer`. `config/mujoco_sim.yaml` hạ giới hạn mềm J4 xuống 128° cho vừa giới hạn khớp của MJCF.
 
 ## Cách ánh xạ (tóm tắt)
 
@@ -140,6 +192,8 @@ scripts/bench_mediapipe.py   so tốc độ MediaPipe CPU và GPU trên máy nà
 scripts/make_charuco_board.py in bảng ChArUco A4
 scripts/calibrate_cameras.py hiệu chuẩn ngoại tham số nhiều camera -> config/cameras_calib.yaml
 tools/bringup/               script bật CAN, đọc khớp, lắc J7 (bring-up robot)
+config/mujoco_sim.yaml       config cho --robot mujoco (đặt sau cùng)
+openarm_mujoco/v1/           MJCF + mesh OpenArm v1 (enactic/openarm_mujoco, Apache-2.0) cho --robot mujoco
 tests/                       pytest
 docs/README.md               mục lục tài liệu + lộ trình
 docs/01..07_*.md             phân tích đề tài, OpenArm v1.0, bring-up, dữ liệu, 2 bài báo, tham khảo
