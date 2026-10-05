@@ -4,10 +4,12 @@ import types
 import numpy as np
 
 from openarm_shadow.config import load_config
-from openarm_shadow.filters import PointKalman
-from openarm_shadow.geometry import rot, unit
-from openarm_shadow.perception import L_HIP, L_SH, R_HIP, R_SH, BodyRef, rotation_distance
-from openarm_shadow.pipeline import ShadowPipeline
+from openarm_shadow.filtering.filters import PointKalman
+from openarm_shadow.core.geometry import rot, unit
+from openarm_shadow.core.rotation import rotation_distance
+from openarm_shadow.vision.body import BodyRef
+from openarm_shadow.vision.landmarks import L_HIP, L_SH, R_HIP, R_SH
+from openarm_shadow.mapping.pipeline import ShadowPipeline
 
 CFG = {"enabled": True, "learn_s": 0.3, "relearn_lost_s": 1.0, "adopt_s": 0.5}
 PTS = {L_SH: np.array([0.18, -0.35, 1.3]), R_SH: np.array([-0.18, -0.35, 1.3]),
@@ -114,7 +116,8 @@ def test_perception_body_frame_ignores_occluded_hips():
 
 def _fusion(ref_cfg):
     from test_multiview import FakeView, hand_points, human_world, two_cams
-    from openarm_shadow.multiview import MultiSample, MultiViewPerception
+    from openarm_shadow.camera.multi_source import MultiSample
+    from openarm_shadow.fusion.multiview import MultiViewPerception
 
     class View(FakeView):
         hide = ()
@@ -136,7 +139,7 @@ def _fusion(ref_cfg):
 
 
 def test_fusion_shoulder_occlusion_vs_real_shrug():
-    from openarm_shadow.perception import body_frame
+    from openarm_shadow.vision.body import body_frame
 
     def upper_arm_error(cfg, dz):
         mvp, views, W, step, _ = _fusion(cfg)
@@ -167,7 +170,7 @@ def test_fusion_keeps_arm_when_shoulders_hidden_and_draws_torso():
         v.hide = (L_SH, R_SH)
     fr = step(16)
     assert fr.body_R is not None and fr.arms["right"].s is not None
-    from openarm_shadow.multiview import MultiSample
+    from openarm_shadow.camera.multi_source import MultiSample
     assert mvp.draw(MultiSample([blank, blank], 16 / 30), fr).shape[0] == 360
     for k in range(17, 60):                                       # che lâu hơn relearn_lost_s: học lại
         step(k)

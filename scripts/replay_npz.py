@@ -13,12 +13,12 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from openarm_shadow.app import park
+from openarm_shadow.control.controller import park
 from openarm_shadow.config import load_config
-from openarm_shadow.kinematics import ArmKinematics
+from openarm_shadow.core.kinematics import ArmKinematics
 from openarm_shadow.robot import make_robot
-from openarm_shadow.safety import SafetyGate
-from openarm_shadow.viz import draw_robot
+from openarm_shadow.safety.gate import SafetyGate
+from openarm_shadow.display.viz import draw_robot
 
 
 def main():

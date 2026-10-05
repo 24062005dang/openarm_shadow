@@ -19,8 +19,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .geometry import angle_between, sp1, sp2, unit, wrap
-from .kinematics import ArmKinematics
+from openarm_shadow.core.geometry import angle_between, sp1, sp2, unit, wrap
+from openarm_shadow.core.kinematics import ArmKinematics
 
 # Hướng bàn tay "trung tính" mặc định: tay thả xuôi, ngón cái ra trước, lòng bàn tay hướng vào đùi, theo đúng
 # quy ước của palm_frame_from_depth (x hướng ngón, z pháp tuyến ra khỏi lòng bàn tay, y = z × x):

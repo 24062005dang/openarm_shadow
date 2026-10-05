@@ -24,7 +24,7 @@ from collections import deque
 
 import numpy as np
 
-from .geometry import unit
+from openarm_shadow.core.geometry import unit
 
 # Chỉ số MediaPipe Hand
 WRIST, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP = 0, 5, 9, 13, 17
@@ -115,7 +115,7 @@ class PalmModel:
 
     def estimate(self, pts, weights=None, quality=1.0):
         """-> (R, center, rms_m, mode). mode: "KABSCH", "3PT" (chưa có khuôn) hoặc lý do bị loại."""
-        from .perception import palm_frame_from_depth
+        from openarm_shadow.vision.depth import palm_frame_from_depth
         p = np.asarray(pts, float)
         if self.template is None:
             R, center = palm_frame_from_depth(p, side=self.side)
@@ -200,7 +200,7 @@ class OrientationFusion:
     def update(self, base, base_conf=1.0, extras=(), base_strong=False):
         """base: 3x3 hoặc None; extras: [(R, conf, tên)]; base_strong: base đã được >= 2 camera xác nhận (tự nó
         tính là 2 nguồn). -> (R, trạng thái, độ tin cậy, nguồn đã dùng)."""
-        from .perception import slerp_rotation
+        from openarm_shadow.core.rotation import slerp_rotation
         obs = [(np.asarray(R, float), float(c), n) for R, c, n in extras if R is not None and c > 0]
         if base is None:
             if not obs:

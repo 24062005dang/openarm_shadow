@@ -12,7 +12,7 @@ from pathlib import Path
 import cv2
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from openarm_shadow.calibration import make_board
+from openarm_shadow.camera.calibration import make_board
 from openarm_shadow.config import load_config
 
 

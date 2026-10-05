@@ -7,7 +7,7 @@
   Thiếu hông (ngồi sau bàn) thì lấy hướng "lên" của camera.
 - Vì hai khung cùng quy ước, hướng đoạn tay người đưa thẳng vào retarget, không cần hiệu chuẩn chiều dài.
 
-## Lớp Arm (openarm_shadow/arm.py)
+## Lớp Arm (openarm_shadow/mapping/arm.py)
 Mỗi tay robot là một `Arm(side)`; trái và phải dùng chung một lớp, `ShadowPipeline.arms` là `{side: Arm}`. `Arm` giữ
 động học, bộ giải retarget, bộ lọc khớp, Kalman / EMA điểm mốc, kẹp, trạng thái hiệu chuẩn tay và các biến theo khung.
 Các thuộc tính cũ (`pipe.held["right"]`, `pipe.rt["left"]`...) vẫn dùng được: chúng là view trỏ vào `Arm`.
@@ -27,7 +27,7 @@ khớp cử động. Vị trí khớp lệch tới ~6 cm vì URDF không lật c
 ảnh hưởng. Chế độ `mapping.mode: mirror` hiện phản chiếu quan sát rồi giải riêng cho từng tay (kết quả khớp
 `MIRROR_SIGNS * góc tay phải`, có test).
 
-## Retarget (openarm_shadow/retarget.py)
+## Retarget (openarm_shadow/mapping/retarget.py)
 OpenArm v1.0 có 7 khớp quay, hai trục liên tiếp luôn vuông góc (test `test_consecutive_axes_perpendicular`),
 ở q = 0 trục J3 và J5 chạy dọc cánh tay trên và cẳng tay. Nên:
 
@@ -39,7 +39,7 @@ OpenArm v1.0 có 7 khớp quay, hai trục liên tiếp luôn vuông góc (test 
 
 Đây là cách chia khớp thiết kế cho OpenArm dựa trên ý tưởng SEW-Mimic (căn hướng chi, SP1/SP2 dạng đóng).
 Phần thuật toán chi tiết (mục IV) của bài báo chưa được đối chiếu, nên có thể khác cách tác giả làm.
-Định nghĩa SP1/SP2 theo mục III-C của bài và ik-geo (Elias & Wen); cài đặt trong `geometry.py` tự viết.
+Định nghĩa SP1/SP2 theo mục III-C của bài và ik-geo (Elias & Wen); cài đặt trong `core/geometry.py` tự viết.
 
 ## Tham khảo
 - SEW-Mimic, arXiv 2602.01632

@@ -15,9 +15,9 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from openarm_shadow.config import load_config
-from openarm_shadow.perception import Perception
-from openarm_shadow.pipeline import ShadowPipeline
-from openarm_shadow.viz import draw_human, draw_robot, side_by_side
+from openarm_shadow.vision.perception import Perception
+from openarm_shadow.mapping.pipeline import ShadowPipeline
+from openarm_shadow.display.viz import draw_human, draw_robot, side_by_side
 
 
 def main():

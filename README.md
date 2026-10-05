@@ -15,16 +15,16 @@ Webcam / điện thoại ──► MediaPipe Pose + Hand ──► khung thân n
 
 | Khâu | File | Lấy ý tưởng từ |
 | --- | --- | --- |
-| Nhận diện người + bàn tay (CPU) | `openarm_shadow/perception.py` | MediaPipe Tasks; ghép bàn tay theo cổ tay như repo Marionette |
+| Nhận diện người + bàn tay (CPU) | `openarm_shadow/vision/perception.py` | MediaPipe Tasks; ghép bàn tay theo cổ tay như repo Marionette |
 | Khung thân (x trước, y trái, z lên) | `geometry.make_frame` | MakeFrame trong SEW-Mimic |
-| Ánh xạ sang 7 khớp | `openarm_shadow/retarget.py` | SEW-Mimic (arXiv 2602.01632): căn **hướng** cánh tay, cẳng tay, bàn tay bằng bài toán con SP1/SP2 |
-| Lọc | `openarm_shadow/filters.py` | One Euro + vùng chết + bỏ bước nhảy (Marionette), EMA điểm mốc 0.8 (Hand Shadowing) |
-| An toàn | `openarm_shadow/safety.py` | Ly hợp + dead-man + tăng tốc mềm (Marionette, kinetic-arm-lab), capsule chống hai tay va nhau (SEW-Mimic) |
-| Fusion 2 camera (`--source multi`) | `openarm_shadow/multiview.py`, `calibration.py` | Pose2Sim (triangulate có trọng số), caliscope/aniposelib (ChArUco), stereohand (đồng bộ) — xem `docs/FUSION.md` |
+| Ánh xạ sang 7 khớp | `openarm_shadow/mapping/retarget.py` | SEW-Mimic (arXiv 2602.01632): căn **hướng** cánh tay, cẳng tay, bàn tay bằng bài toán con SP1/SP2 |
+| Lọc | `openarm_shadow/filtering/filters.py` | One Euro + vùng chết + bỏ bước nhảy (Marionette), EMA điểm mốc 0.8 (Hand Shadowing) |
+| An toàn | `openarm_shadow/safety/gate.py` | Ly hợp + dead-man + tăng tốc mềm (Marionette, kinetic-arm-lab), capsule chống hai tay va nhau (SEW-Mimic) |
+| Fusion 2 camera (`--source multi`) | `openarm_shadow/fusion/` (triangulate, MultiViewPerception), `camera/calibration.py` | Pose2Sim (triangulate có trọng số), caliscope/aniposelib (ChArUco), stereohand (đồng bộ) — xem `docs/FUSION.md` |
 | Robot thật | `openarm_shadow/robot/openarm_can_robot.py` | `openarm_can`, gain chính thức v1.0 |
 | Robot mô phỏng MuJoCo (`--robot mujoco`) | `openarm_shadow/robot/mujoco_robot.py` + `openarm_mujoco/v1/` | MJCF của `enactic/openarm_mujoco` (góc khớp = góc URDF, FK lệch 0 mm) |
-| Một tay robot (trái / phải dùng chung) | `openarm_shadow/arm.py` | Lớp `Arm`: động học, bộ giải, bộ lọc, kẹp, hiệu chuẩn của một tay; `MIRROR_SIGNS` (J1,J2,J3,J5,J6,J7 đảo dấu, J4 giữ) |
-| Động học OpenArm v1.0 | `openarm_shadow/kinematics.py` + `data/openarm_v10_arms.json` | URDF của `enactic/openarm_description` |
+| Một tay robot (trái / phải dùng chung) | `openarm_shadow/mapping/arm.py` | Lớp `Arm`: động học, bộ giải, bộ lọc, kẹp, hiệu chuẩn của một tay; `MIRROR_SIGNS` (J1,J2,J3,J5,J6,J7 đảo dấu, J4 giữ) |
+| Động học OpenArm v1.0 | `openarm_shadow/core/kinematics.py` + `data/openarm_v10_arms.json` | URDF của `enactic/openarm_description` |
 
 Toàn bộ code tự viết; không chép code từ các repo trên (phần lớn không có license).
 
@@ -41,7 +41,7 @@ lọc số đọc rác.
 - `scripts/demo_sim.py` chạy trọn luồng pipeline → SafetyGate → robot mô phỏng với người giả lập (đã chạy được,
   cả hình que lẫn MuJoCo).
 - Robot MuJoCo (`--robot mujoco`, 05/10): chạy được với `demo_sim.py` và webcam laptop. Mô hình MJCF v1 trùng
-  động học `kinematics.py`; giới hạn J4 của MJCF hẹp hơn URDF (128-131°) nên dùng kèm `config/mujoco_sim.yaml`.
+  động học `core/kinematics.py`; giới hạn J4 của MJCF hẹp hơn URDF (128-131°) nên dùng kèm `config/mujoco_sim.yaml`.
 - Đã chạy với webcam thật trên laptop của nhóm (mô phỏng, 28/09): nhận diện và bám theo tay.
 - Tay phải đã chạy trên OpenArm thật (30/09: J1–J4; 02/10: J1–J7 + kẹp, 2 camera). Tay trái: không phải zero sai mà
   J1/J2 lệch 180° (docs/SAFETY.md), offset ở `config/both_arms_real.yaml`, CHƯA chạy thật.
@@ -167,11 +167,32 @@ Như chế độ sim: giữ READY 3 s là tự engage, không hỏi `yes`. Tuỳ
   hợp với động tác biểu diễn, chưa hợp gắp chính xác.
 - Nhiều nghiệm → chọn nghiệm trong giới hạn khớp và gần tư thế trước nhất.
 - Kẹp: r = (đầu ngón cái − đầu ngón trỏ) / chiều dài bàn tay, chụm = đóng (0), xoè = mở hẳn (1), mở liên tục theo
-  hai ngón (`openarm_shadow/grip.py`). Phím **g** khi chạy: chụm hết cỡ rồi xoè hết cỡ trong 4 s để đo theo tay
+  hai ngón (`openarm_shadow/mapping/grip.py`). Phím **g** khi chạy: chụm hết cỡ rồi xoè hết cỡ trong 4 s để đo theo tay
   mình (số in ra terminal, ghi vào `grip:` để dùng lần sau). Chỉ muốn vài mức: `grip.levels: [0, 0.5, 1]`.
   Motor kẹp chỉ chạy khi `robot.gripper.enabled: true` (đo trước góc mở/đóng thật bằng `tools/bringup/read_joints.py`).
 
 Chi tiết và nguồn: `docs/DESIGN.md`, `docs/05_diem_moi_2_bai_bao.md`.
+
+## Cấu trúc mã nguồn (`openarm_shadow/`)
+
+| Gói | Nội dung | File chính |
+| --- | --- | --- |
+| `core/` | hình học, động học, kiểu dữ liệu dùng chung (không phụ thuộc camera / robot) | `geometry.py`, `kinematics.py`, `rotation.py`, `types.py` (`ArmObs`, `Frame`) |
+| `camera/` | nguồn khung webcam / RealSense, nhiều camera, mô hình camera, hiệu chuẩn ChArUco | `sources.py`, `multi_source.py`, `model.py`, `calibration.py` |
+| `vision/` | MediaPipe Pose + Hand, depth RealSense, khung thân, ghép bàn tay, luồng nhận diện nền | `perception.py`, `depth.py`, `body.py` (`BodyRef`), `handfusion.py`, `landmarks.py`, `worker.py` |
+| `fusion/` | hợp nhất nhiều camera: triangulate, hướng bàn tay chống lật, `MultiViewPerception` | `triangulation.py`, `orientation.py`, `multiview.py` |
+| `mapping/` | từ quan sát tay người tới góc khớp | `retarget.py`, `arm.py` (`Arm`, `MIRROR_SIGNS`), `grip.py`, `pipeline.py` (`ShadowPipeline`) |
+| `filtering/` | One Euro, vùng chết, Kalman điểm 3D, độ dài xương | `filters.py` |
+| `safety/` | `SafetyGate`: giới hạn khớp / vận tốc, ly hợp, dead-man, chống va chạm | `gate.py` |
+| `control/` | luồng điều khiển robot `Controller`, về tư thế nghỉ `park` | `controller.py` |
+| `robot/` | backend robot: mô phỏng, MuJoCo, OpenArm thật qua CAN-FD | `sim.py`, `mujoco_robot.py`, `openarm_can_robot.py` |
+| `display/` | khung xương, hình que robot, dòng chẩn đoán trên màn hình | `viz.py`, `overlay.py` |
+| (gốc gói) | `app.py` vòng chạy chính nối các gói trên, `config.py` đọc config | |
+
+Luồng dữ liệu: `camera` -> `vision` (-> `fusion` nếu nhiều camera) -> `mapping` (dùng `filtering`) -> `safety` ->
+`control` -> `robot`; `display` vẽ kết quả. Phụ thuộc giữa các gói (đã kiểm tra, không có vòng): `core` không import gói
+nào; `camera`, `vision`, `safety`, `mapping` chỉ dùng `core` (`mapping` thêm `filtering`); `fusion` dùng `camera`, `vision`,
+`core` và `display` (để vẽ ảnh nhiều camera); `app.py` nối tất cả.
 
 ## Cấu trúc
 

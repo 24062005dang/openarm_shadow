@@ -12,9 +12,9 @@ from pathlib import Path
 
 import numpy as np
 
-from .geometry import rot, rpy_to_matrix, unit
+from openarm_shadow.core.geometry import rot, rpy_to_matrix, unit
 
-DATA = Path(__file__).parent / "data" / "openarm_v10_arms.json"
+DATA = Path(__file__).resolve().parents[1] / "data" / "openarm_v10_arms.json"
 
 
 @dataclass

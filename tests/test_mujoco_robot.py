@@ -5,9 +5,9 @@ import pytest
 mujoco = pytest.importorskip("mujoco")
 
 from openarm_shadow.config import ROOT, load_config
-from openarm_shadow.kinematics import ArmKinematics
+from openarm_shadow.core.kinematics import ArmKinematics
 from openarm_shadow.robot import make_robot
-from openarm_shadow.safety import SafetyGate
+from openarm_shadow.safety.gate import SafetyGate
 
 MODEL = ROOT / "openarm_mujoco" / "v1" / "scene.xml"
 pytestmark = pytest.mark.skipif(not MODEL.exists(), reason="chưa có openarm_mujoco/v1")

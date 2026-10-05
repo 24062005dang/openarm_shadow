@@ -3,10 +3,13 @@ import types
 
 import numpy as np
 
-from openarm_shadow.geometry import rot, unit
-from openarm_shadow.handfusion import OrientationFusion
-from openarm_shadow.multiview import MultiSample, MultiViewPerception, view_options
-from openarm_shadow.perception import ArmObs, Frame, body_frame, palm_frame_from_depth
+from openarm_shadow.core.geometry import rot, unit
+from openarm_shadow.vision.handfusion import OrientationFusion
+from openarm_shadow.camera.multi_source import MultiSample
+from openarm_shadow.fusion.multiview import MultiViewPerception, view_options
+from openarm_shadow.core.types import ArmObs, Frame
+from openarm_shadow.vision.body import body_frame
+from openarm_shadow.vision.depth import palm_frame_from_depth
 
 from test_handfusion import _hand_R, ang
 from test_multiview import FakeView, hand_points, human_world, two_cams
@@ -189,7 +192,7 @@ def test_late_secondary_frame_is_not_fused():
     """Khung camera phụ lệch 60 ms (chưa tới 100 ms) trước đây vẫn bị ghép; giờ bị bỏ (max_skew_s 40 ms)."""
     import threading
     from collections import deque
-    from openarm_shadow.multiview import MultiCameraSource
+    from openarm_shadow.camera.multi_source import MultiCameraSource
     S = types.SimpleNamespace(bgr=np.zeros((2, 2, 3), np.uint8))
     src = MultiCameraSource.__new__(MultiCameraSource)
     src.tol, src.pair_wait = 0.025, 0.0

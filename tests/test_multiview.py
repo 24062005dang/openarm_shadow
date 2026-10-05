@@ -5,10 +5,15 @@ import cv2
 import numpy as np
 import pytest
 
-from openarm_shadow.geometry import rot, unit
-from openarm_shadow.multiview import (CameraModel, HandOrientationTracker, MultiSample, MultiViewPerception,
-                                      fuse_point, triangulate_weighted)
-from openarm_shadow.perception import Frame, ArmObs, palm_frame_from_depth, body_frame
+from openarm_shadow.core.geometry import rot, unit
+from openarm_shadow.camera.model import CameraModel
+from openarm_shadow.camera.multi_source import MultiSample
+from openarm_shadow.fusion.multiview import MultiViewPerception
+from openarm_shadow.fusion.orientation import HandOrientationTracker
+from openarm_shadow.fusion.triangulation import fuse_point, triangulate_weighted
+from openarm_shadow.core.types import Frame, ArmObs
+from openarm_shadow.vision.body import body_frame
+from openarm_shadow.vision.depth import palm_frame_from_depth
 
 K = np.array([[600.0, 0, 320], [0, 600.0, 240], [0, 0, 1]])
 SUBJECT = np.array([0.0, 0.0, 1.3])      # người đứng cách camera trực diện 1,3 m
@@ -225,8 +230,13 @@ def render_board(board, cam, R_b, t_b, size=(640, 480)):
 
 
 def test_charuco_extrinsics_recovered():
-    from openarm_shadow.calibration import (average_extrinsics, board_pose, detect, make_board,
-                                            relative_extrinsic, reprojection_rms_px)
+    from openarm_shadow.camera.calibration import (
+        average_extrinsics,
+        board_pose,
+        detect,
+        make_board,
+        relative_extrinsic,
+        reprojection_rms_px)
     board, det = make_board({"squares_x": 5, "squares_y": 7, "square_m": 0.035, "marker_m": 0.026})
     cams = two_cams()
     rng = np.random.default_rng(5)
@@ -255,7 +265,7 @@ def test_charuco_extrinsics_recovered():
 def test_webcam_calibration_size_is_checked(tmp_path):
     """Nội tham số webcam chỉ đúng ở độ phân giải lúc hiệu chuẩn: lệch thì dừng, không chạy với số sai."""
     import yaml
-    from openarm_shadow.multiview import check_image_size, load_calibration
+    from openarm_shadow.camera.model import check_image_size, load_calibration
     f = tmp_path / "calib.yaml"
     f.write_text(yaml.safe_dump({"cameras": {
         "front": {"R": np.eye(3).tolist(), "t": [0, 0, 0], "K": K.tolist(), "dist": [0] * 5, "size": [640, 480]},
@@ -272,8 +282,8 @@ def test_webcam_calibration_size_is_checked(tmp_path):
 def test_camera_stall_is_reported(monkeypatch):
     """Webcam ngừng gửi khung: read() trả False kèm lý do (camera nào, bao nhiêu khung/lỗi), không thoát im lặng."""
     import time as _time
-    import openarm_shadow.sources as sources
-    from openarm_shadow.multiview import MultiCameraSource
+    import openarm_shadow.camera.sources as sources
+    from openarm_shadow.camera.multi_source import MultiCameraSource
 
     class Fake:
         mode = "fake"
@@ -306,8 +316,8 @@ def test_camera_stall_is_reported(monkeypatch):
 def test_frozen_second_camera_is_marked_stale(monkeypatch):
     """Camera phụ treo: không được ghép khung cũ của nó mãi mãi vào triangulation."""
     import time as _time
-    import openarm_shadow.sources as sources
-    from openarm_shadow.multiview import MultiCameraSource
+    import openarm_shadow.camera.sources as sources
+    from openarm_shadow.camera.multi_source import MultiCameraSource
 
     class Fake:
         mode = "fake"
@@ -350,7 +360,7 @@ def test_frozen_second_camera_is_marked_stale(monkeypatch):
 
 
 def test_stall_message_names_the_stalled_camera():
-    from openarm_shadow.multiview import MultiCameraSource
+    from openarm_shadow.camera.multi_source import MultiCameraSource
     src = MultiCameraSource.__new__(MultiCameraSource)
     src.names = ["front", "side45"]
     src.stats = [{"frames": 90, "fails": 0, "error": None}, {"frames": 0, "fails": 3, "error": "timeout"}]
@@ -359,7 +369,7 @@ def test_stall_message_names_the_stalled_camera():
 
 
 def test_camera_time_offset_from_motion_signal():
-    from openarm_shadow.calibration import estimate_time_offset
+    from openarm_shadow.camera.calibration import estimate_time_offset
     rng = np.random.default_rng(3)
     t_ref = np.arange(0, 12, 1 / 30) + rng.uniform(0, 0.005, 360)
     bursts = lambda t: sum(np.exp(-((t - c) / 0.15) ** 2) for c in (2.0, 3.7, 5.1, 6.9, 8.2, 9.8))
@@ -373,7 +383,7 @@ def _source_with_buffers(sync, ref_times, other_times, latency=0.0):
     """MultiCameraSource không mở camera thật: đặt sẵn bộ đệm (thời điểm đã bù latency) rồi gọi read()."""
     import threading
     from collections import deque
-    from openarm_shadow.multiview import MultiCameraSource
+    from openarm_shadow.camera.multi_source import MultiCameraSource
     src = MultiCameraSource.__new__(MultiCameraSource)
     src.names, src.tol, src.stale_s, src.pair_wait = ["front", "side45_left"], 0.025, 0.04, 0.0
     src.sync, src.sync_max_wait, src.last_ref_t, src.running = sync, 0.15, -1.0, True

@@ -5,10 +5,10 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import pytest
 
-from openarm_shadow.arm import MIRROR_SIGNS, Arm, mirror_q, other_side
+from openarm_shadow.mapping.arm import MIRROR_SIGNS, Arm, mirror_q, other_side
 from openarm_shadow.config import ROOT, load_config
-from openarm_shadow.kinematics import ArmKinematics
-from openarm_shadow.pipeline import ShadowPipeline
+from openarm_shadow.core.kinematics import ArmKinematics
+from openarm_shadow.mapping.pipeline import ShadowPipeline
 from test_pipeline import fake_frame
 
 MD = ROOT / "ROS inference.md"

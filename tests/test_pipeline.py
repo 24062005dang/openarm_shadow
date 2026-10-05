@@ -2,9 +2,9 @@
 import numpy as np
 
 from openarm_shadow.config import load_config
-from openarm_shadow.perception import ArmObs, Frame
-from openarm_shadow.pipeline import ShadowPipeline
-from openarm_shadow.viz import draw_robot
+from openarm_shadow.core.types import ArmObs, Frame
+from openarm_shadow.mapping.pipeline import ShadowPipeline
+from openarm_shadow.display.viz import draw_robot
 
 
 def fake_frame(pipe, q_true, t, noise=0.0, open_fingers=4, rng=np.random.default_rng(0)):
@@ -123,8 +123,8 @@ def test_default_hand_neutral_matches_relaxed_hand_each_side():
     (trước đây tay phải lệch 180°: J5 chạy tới giới hạn)."""
     import numpy as np
     from openarm_shadow.config import load_config
-    from openarm_shadow.perception import palm_frame_from_depth
-    from openarm_shadow.pipeline import ShadowPipeline
+    from openarm_shadow.vision.depth import palm_frame_from_depth
+    from openarm_shadow.mapping.pipeline import ShadowPipeline
     from test_multiview import hand_points
 
     cfg = load_config()

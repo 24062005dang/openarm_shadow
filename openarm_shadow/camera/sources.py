@@ -174,3 +174,6 @@ def webcam_options(cfg):
     c = cfg["camera"]
     return {"width": c["width"], "height": c["height"], "fourcc": c.get("fourcc"), "fps": c.get("fps"),
             "v4l2": c.get("v4l2") or {}}
+
+
+REALSENSE_NAMES = {"realsense", "rs", "d455", "d435", "d435i"}

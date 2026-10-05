@@ -21,13 +21,13 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from openarm_shadow.arm import MIRROR_SIGNS
+from openarm_shadow.mapping.arm import MIRROR_SIGNS
 from openarm_shadow.config import load_config
-from openarm_shadow.perception import ArmObs, Frame
-from openarm_shadow.pipeline import ShadowPipeline
+from openarm_shadow.core.types import ArmObs, Frame
+from openarm_shadow.mapping.pipeline import ShadowPipeline
 from openarm_shadow.robot import make_robot
-from openarm_shadow.safety import SafetyGate
-from openarm_shadow.viz import draw_robot, put_lines
+from openarm_shadow.safety.gate import SafetyGate
+from openarm_shadow.display.viz import draw_robot, put_lines
 
 D = np.deg2rad
 # (thời điểm s, động tác đang làm để tới tư thế này, tư thế tay phải J1..J7 độ; None = tay bị che).

@@ -25,10 +25,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from .filters import EMA, ArmShape, JointFilter, PointKalman
-from .grip import GripMapper
-from .kinematics import ArmKinematics
-from .retarget import ArmRetargeter, default_hand_neutral, mirror_rotation
+from openarm_shadow.filtering.filters import EMA, ArmShape, JointFilter, PointKalman
+from openarm_shadow.mapping.grip import GripMapper
+from openarm_shadow.core.kinematics import ArmKinematics
+from openarm_shadow.mapping.retarget import ArmRetargeter, default_hand_neutral, mirror_rotation
 
 SIDES = ("right", "left")
 

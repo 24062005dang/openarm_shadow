@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from .geometry import angle_between, orthonormalize, unit
-from .arm import Arm, _SideView
-from .perception import ArmObs, Frame
-from .retarget import mirror_rotation, mirror_vector
+from openarm_shadow.core.geometry import angle_between, orthonormalize, unit
+from openarm_shadow.mapping.arm import Arm, _SideView
+from openarm_shadow.core.types import ArmObs, Frame
+from openarm_shadow.mapping.retarget import mirror_rotation, mirror_vector
 
 
 class ShadowPipeline:

@@ -1,8 +1,8 @@
 """Bố cục cửa sổ: nhiều camera -> hình robot nằm dưới, rộng bằng dải camera; 1 camera -> bên phải như cũ."""
 import numpy as np
 
-from openarm_shadow.kinematics import ArmKinematics
-from openarm_shadow.viz import compose_view, draw_robot
+from openarm_shadow.core.kinematics import ArmKinematics
+from openarm_shadow.display.viz import compose_view, draw_robot
 
 KINS = {"right": ArmKinematics("right")}
 Q = {"right": np.zeros(8)}
@@ -44,9 +44,9 @@ def test_far_projected_points_are_skipped_not_crash():
     import cv2
     import pytest
 
-    from openarm_shadow.multiview import MultiViewPerception
-    from openarm_shadow.perception import ArmObs, Frame
-    from openarm_shadow.viz import draw_human, pixel
+    from openarm_shadow.fusion.multiview import MultiViewPerception
+    from openarm_shadow.core.types import ArmObs, Frame
+    from openarm_shadow.display.viz import draw_human, pixel
 
     img = np.zeros((480, 640, 3), np.uint8)
     assert pixel([10.4, 20.6], img) == (10, 21)

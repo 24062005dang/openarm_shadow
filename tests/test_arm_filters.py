@@ -2,8 +2,8 @@
 import numpy as np
 
 from openarm_shadow.config import load_config
-from openarm_shadow.filters import ArmShape, PointKalman
-from openarm_shadow.pipeline import ShadowPipeline
+from openarm_shadow.filtering.filters import ArmShape, PointKalman
+from openarm_shadow.mapping.pipeline import ShadowPipeline
 from test_pipeline import fake_frame
 
 

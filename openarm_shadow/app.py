@@ -11,186 +11,33 @@ Phím: SPACE = engage / nhả (ly hợp) · c = hiệu chuẩn hướng bàn tay
 """
 from __future__ import annotations
 
-import threading
 import time
 
 import cv2
 import numpy as np
 
-from .perception import ARM_IDX, Perception
-from .pipeline import ShadowPipeline
-from .robot import make_robot
-from .safety import SafetyGate
-from .multiview import MultiCameraSource, MultiViewPerception
-from .sources import open_source
-from .viz import compose_view, draw_human, draw_robot, put_lines
+from openarm_shadow.control.controller import Controller, park, uncalibrated_free_wrists
+from openarm_shadow.display.overlay import fusion_lines
+from openarm_shadow.vision.landmarks import ARM_IDX
+from openarm_shadow.vision.worker import PerceptionWorker
+from openarm_shadow.vision.perception import Perception
+from openarm_shadow.mapping.pipeline import ShadowPipeline
+from openarm_shadow.robot import make_robot
+from openarm_shadow.safety.gate import SafetyGate
+from openarm_shadow.camera.multi_source import MultiCameraSource
+from openarm_shadow.fusion.multiview import MultiViewPerception
+from openarm_shadow.camera.sources import open_source
+from openarm_shadow.display.viz import compose_view, draw_human, draw_robot, put_lines
 
 
-class Controller(threading.Thread):
-    def __init__(self, robot, gate, hz):
-        super().__init__(daemon=True)
-        self.robot, self.gate, self.dt = robot, gate, 1.0 / hz
-        self.lock = threading.Lock()
-        self.running = True
-        self.error = None
-        self.cmd = None
-        self.trace = None             # list -> ghi (t, lệnh, đo) mỗi nhịp điều khiển
-
-    def run(self):
-        t_prev = time.monotonic()
-        try:
-            while self.running:
-                now = time.monotonic()
-                with self.lock:
-                    cmd = self.gate.step(now - t_prev, now)
-                    self.cmd = {s: v.copy() for s, v in cmd.items()}
-                    dq = None if self.gate.dq is None else {s: v.copy() for s, v in self.gate.dq.items()}
-                t_prev = now
-                if dq is not None:
-                    self.robot.send(self.cmd, dq)
-                else:
-                    self.robot.send(self.cmd)
-                if self.trace is not None:          # ghi 100 Hz: lệnh và góc đo (đo độ trễ, scripts/measure_lag.py)
-                    meas = self.robot.read()
-                    self.trace.append((now, {s: self.cmd[s].copy() for s in self.cmd},
-                                       {s: np.asarray(meas[s], float).copy() for s in meas}))
-                time.sleep(max(0.0, self.dt - (time.monotonic() - now)))
-        except Exception as e:     # lỗi phần cứng: dừng vòng điều khiển, luồng chính sẽ thoát an toàn
-            self.error = e
-            self.running = False
 
 
-def uncalibrated_free_wrists(pipe, gate):
-    """Các tay robot có J5-J7 được phép cử động (giới hạn mềm khác [0, 0]) mà bàn tay chưa hiệu chuẩn."""
-    out = []
-    for s in pipe.robot_sides:
-        free = bool(np.any(gate.hi[s][4:7] - gate.lo[s][4:7] > 1e-6))
-        if free and not pipe.hand_calibrated[s]:
-            out.append(s)
-    return out
 
 
-def fusion_lines(fr, sides):
-    """Dòng chẩn đoán fusion: số camera thấy vai/khuỷu/cổ tay, sai số chiếu lại, xung đột depth, bàn tay."""
-    fi = fr.fusion or {}
-    people = fi.get("people")
-    out = [f"fusion {fi.get('views', 0)} cam | lech khung {fi.get('skew_ms', 0.0):.0f} ms"
-           + (" | nguoi thay: " + "/".join(str(n) for n in people) + " (khoa 1 nguoi)" if people else "")
-           + (f" | MAT KHUNG: {', '.join(fi['stale'])}" if fi.get("stale") else "")]
-    match = fi.get("person") or {}
-    if match:
-        # Camera phụ có chọn đúng người camera 0 đang khoá không (multiview._match_operator)
-        def txt(m):
-            if m["mode"] == "tu khoa":
-                return "tu khoa"
-            err = m.get("err", float("nan"))
-            val = "" if not np.isfinite(err) else (f" {err:.2f}" if m["mode"] == "3D" else f" {err:.0f}px")
-            return ("khop " if m["ok"] else "KHONG KHOP ") + m["mode"] + val
-        out.append("cung 1 nguoi: " + " | ".join(f"{n} {txt(m)}" for n, m in match.items()))
-    names = {"right": (12, 14, 16), "left": (11, 13, 15)}
-    for s in sides:
-        pts = fi.get("points", {})
-        if fi.get("body") == "front":
-            out.append(f"{s}: vai/khuyu/co tay tu Pose camera 0")
-            pts = None
-        parts = []
-        for tag, i in zip(("vai", "khuyu", "co tay"), names[s] if pts is not None else ()):
-            p = pts.get(i)
-            if p is None:
-                parts.append(f"{tag} -")
-                continue
-            err = p.get("err_px", float("nan"))
-            parts.append(f"{tag} {p['views']}cam" + (f" {err:.0f}px" if np.isfinite(err) else "") +
-                         (" D" if p.get("depth") else "") + (" !" if p.get("conflict") else ""))
-        if parts:
-            out.append(f"{s}: " + " | ".join(parts))
-        h = fi.get(f"hand_{s}")
-        if h:
-            extra = ""
-            if h.get("fit") == "KABSCH" and np.isfinite(h.get("fit_mm", np.nan)):
-                extra += f", khop long tay {h['fit_mm']:.0f}mm"
-            elif h.get("fit") == "3PT":
-                extra += ", dang hoc khuon long tay"
-            if h.get("rejected"):
-                extra += f", bo {h['rejected']} cam (xa co tay)"
-            if h.get("bones_dropped"):
-                extra += f", bo {h['bones_dropped']} diem (dot bat thuong)"
-            if h.get("sources"):
-                extra += " | nguon: " + "+".join(h["sources"])
-            out.append(f"  ban tay {h['views']}cam {h['points']}/21 diem, nhin ro {h['quality']:.2f}, "
-                       f"{h['mode']}{extra}")
-    return out
 
 
-def park(robot, gate, rest, vel_deg_s, timeout=25.0):
-    """Đưa hai tay về tư thế nghỉ với tốc độ thấp (chạy sau khi đã dừng luồng điều khiển)."""
-    saved = gate.max_vel.copy()
-    gate.max_vel = np.full(7, np.deg2rad(vel_deg_s))
-    gate.engage(time.monotonic() - 10)     # bỏ qua pha tăng tốc
-    if hasattr(robot, "returning"):
-        robot.returning = True             # đang về: số đọc rác chỉ bị bỏ qua, không dừng giữa chừng
-    try:
-        t0 = t_prev = time.monotonic()
-        while time.monotonic() - t0 < timeout:
-            now = time.monotonic()
-            tgt = {s: np.append(rest, np.nan) for s in gate.sides}
-            gate.set_target(tgt, now)
-            cmd = gate.step(now - t_prev, now)
-            t_prev = now
-            robot.send(cmd)
-            if max(np.max(np.abs(cmd[s][:7] - rest)) for s in gate.sides) < np.deg2rad(1.0):
-                break
-            time.sleep(0.01)
-    finally:
-        if hasattr(robot, "returning"):
-            robot.returning = False
-        gate.max_vel = saved
-        gate.disengage()
 
 
-class PerceptionWorker(threading.Thread):
-    """Đọc camera + MediaPipe ở luồng riêng: luồng chính vẽ/điều khiển khung N trong lúc khung N+1 đang được nhận
-    diện (trước đây làm nối tiếp nên vẽ chặn nhận diện). Luôn giữ kết quả MỚI NHẤT; luồng chính chậm thì bỏ khung cũ."""
-
-    def __init__(self, cap, process):
-        super().__init__(daemon=True, name="perception")
-        self.cap, self.process = cap, process
-        self.cond = threading.Condition()
-        self.latest, self.seq, self.taken = None, 0, 0
-        self.running, self.done, self.error = True, False, None
-
-    def run(self):
-        try:
-            while self.running:
-                ok, sample = self.cap.read()
-                if not ok:
-                    self.error = getattr(self.cap, "error", None) or "Nguồn video hết khung hoặc mất kết nối."
-                    break
-                item = (sample, *self.process(sample))
-                with self.cond:
-                    self.latest, self.seq = item, self.seq + 1
-                    self.cond.notify_all()
-        except BaseException as e:           # lỗi nhận diện: báo cho luồng chính, không chết im lặng
-            self.error = f"{type(e).__name__}: {e}"
-        finally:
-            with self.cond:
-                self.done = True
-                self.cond.notify_all()
-
-    def get(self, timeout=10.0):
-        """Kết quả mới (sample, frame, extra) chưa lấy; None nếu luồng đã dừng (xem .error) hoặc quá timeout."""
-        with self.cond:
-            if not self.cond.wait_for(lambda: self.seq > self.taken or self.done, timeout):
-                self.error = f"không có khung mới trong {timeout:.0f} s"
-                return None
-            if self.seq <= self.taken:
-                return None
-            self.taken = self.seq
-            return self.latest
-
-    def stop(self):
-        self.running = False
-        self.join(timeout=5.0)               # cap.read() có thể chờ tới 3 s
 
 
 def fusion_row(fr, human_side):
@@ -239,7 +86,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
         if robot_kind == "openarm" and dry_run:
             real = make_robot("openarm", cfg, pipe.robot_sides)
             q_meas = real.connect()
-            from .robot.sim import SimRobot
+            from openarm_shadow.robot.sim import SimRobot
             robot = SimRobot(pipe.robot_sides, q0=q_meas)
             robot_kind = "sim"
         else:
