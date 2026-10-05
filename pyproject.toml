@@ -7,6 +7,7 @@ dependencies = ["mediapipe==0.10.21", "numpy", "pyyaml"]
 
 [project.optional-dependencies]
 realsense = ["pyrealsense2==2.58.1.10581"]
+mujoco = ["mujoco>=3.6"]
 
 [tool.setuptools]
 packages = ["openarm_shadow", "openarm_shadow.robot"]

@@ -24,7 +24,7 @@ from openarm_shadow.viz import draw_robot
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("npz")
-    ap.add_argument("--robot", choices=["sim", "openarm"], default="sim")
+    ap.add_argument("--robot", choices=["sim", "mujoco", "openarm"], default="sim")
     ap.add_argument("--config", default=None)
     ap.add_argument("--speed", type=float, default=1.0, help="hệ số tốc độ phát (0.5 = chậm một nửa)")
     args = ap.parse_args()
@@ -54,7 +54,7 @@ def main():
             gate.set_target({s: traj[s][min(k, len(t) - 1)] for s in sides}, now)
             cmd = gate.step(dt, now)
             robot.send(cmd)
-            if args.robot == "sim":
+            if args.robot in ("sim", "mujoco"):
                 cv2.imshow("replay", draw_robot(kins, cmd, title=f"t = {tr:5.1f} s | {gate.status}"))
                 if cv2.waitKey(1) & 0xFF in (ord("q"), 27):
                     break

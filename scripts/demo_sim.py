@@ -8,6 +8,7 @@ ShadowPipeline (retarget + lọc) -> SafetyGate -> SimRobot, rồi vẽ hình qu
     python scripts/demo_sim.py                    # mở cửa sổ, q/Esc để thoát
     python scripts/demo_sim.py --out demo.mp4     # không mở cửa sổ, ghi ra video
     python scripts/demo_sim.py --mode mirror
+    python scripts/demo_sim.py --robot mujoco --config config/mujoco_sim.yaml   # robot 3D MuJoCo thay hình que
 
 Hình: nét mảnh xám = mục tiêu sau retarget + lọc; nét đậm = lệnh sau SafetyGate (thứ gửi xuống robot).
 """
@@ -80,7 +81,9 @@ def fake_frame(pipe, q_true, t, rng, noise=0.004):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", default=None)
+    ap.add_argument("--config", action="append", default=None)
+    ap.add_argument("--robot", choices=["sim", "mujoco"], default="sim",
+                    help="mujoco: thêm cửa sổ MuJoCo; nét xanh lá trên hình que = góc thật trong mô phỏng")
     ap.add_argument("--mode", choices=["direct", "mirror"], default=None)
     ap.add_argument("--fps", type=float, default=30.0, help="tốc độ khung 'camera' giả lập")
     ap.add_argument("--out", default=None, help="ghi video .mp4 thay vì mở cửa sổ")
@@ -90,7 +93,7 @@ def main():
     if args.mode:
         cfg["mapping"]["mode"] = args.mode
     pipe = ShadowPipeline(cfg)
-    robot = make_robot("sim", cfg, pipe.robot_sides)
+    robot = make_robot(args.robot, cfg, pipe.robot_sides)
     q_meas = robot.connect()
     gate = SafetyGate(pipe.kins, cfg["safety"])
     gate.reset(q_meas)
@@ -121,7 +124,8 @@ def main():
         statuses[gate.status.split(" (")[0].split(" ")[0]] = statuses.get(gate.status.split(" (")[0].split(" ")[0], 0) + 1
         if "va chạm" in gate.status:
             blocked += 1
-        img = draw_robot(pipe.kins, robot.read(), size=(640, 640), q_target=targets,
+        img = draw_robot(pipe.kins, gate.cmd, size=(640, 640), q_target=targets,
+                         q_meas=robot.read() if args.robot == "mujoco" else None,
                          title=f"t = {t:4.1f} s | {name}")
         put_lines(img, [f"SafetyGate: {gate.status}"], org=(10, 46), color=(30, 30, 200))
         if writer is not None:
@@ -135,6 +139,7 @@ def main():
         writer.release()
         print("Đã ghi", args.out)
     cv2.destroyAllWindows()
+    robot.close()
     print("Sai lệch lớn nhất J1–J4 giữa mục tiêu và tư thế người (lúc follow, độ):",
           {s: round(v, 1) for s, v in worst.items()})
     print(f"Số khung SafetyGate chặn vì hai tay sắp va nhau: {blocked}")

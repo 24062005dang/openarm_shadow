@@ -1,0 +1,35 @@
+# Mô phỏng MuJoCo OpenArm v1 thay robot que: đặt file này SAU CÙNG trong chuỗi --config.
+#
+#   python scripts/demo_sim.py --robot mujoco --config config/mujoco_sim.yaml          # không cần camera
+#   python scripts/shadow.py --robot mujoco --config config/mujoco_sim.yaml            # D455
+#   python scripts/shadow.py --robot mujoco --source multi --config config/fusion_3cam_rs.yaml --config config/mujoco_sim.yaml
+#
+# Cần: pip install -e '.[mujoco]' (mujoco >= 3.6) và thư mục openarm_mujoco/v1 (MJCF + meshes).
+
+robot:
+  mujoco:
+    mode: physics          # kinematic: robot đi đúng lệnh, không động lực học
+    gravity_comp: true
+    viewer: true
+    # PD actuator MuJoCo (lực = kp (ctrl - q) - kv dq), chỉnh để bám tay nhanh hơn, mượt hơn. Đo trên quỹ đạo sin 0,6 Hz
+    # (mục tiêu 20 Hz như camera): sai số bám trung bình 13,9° -> ~5,6°, nhảy bậc 30-70° đạt 90% nhanh hơn ~35%, vọt
+    # <= 2,3°, ổn định cuối < 0,05°. J1-J4 giữ gain chính thức v1.0 (70/70/70/60); cổ tay nâng kp 10 -> 25 nhưng hạ kv
+    # (0,7/0,6/0,5 -> 0,8/0,7/0,6 theo tỉ lệ kp thấp hơn mức tăng) để không giật. KHÔNG nâng kp cao hơn: mô-men cổ tay
+    # chạm giới hạn motor (forcerange của MJCF, không bị tăng gain làm vượt). Bỏ hai dòng này = gain mặc định của MJCF.
+    kp: [70, 70, 70, 60, 25, 25, 25]
+    kv: [2.75, 2.5, 2.0, 2.0, 0.8, 0.7, 0.6]
+
+safety:
+  # Tốc độ / gia tốc: mặc định (45-90°/s, gia tốc 300-1500°/s2) chặn tay người nhanh -> sai số lớn. Nâng vừa phải
+  # và bật velocity_tracking (lệnh chạy đều theo vận tốc mục tiêu, giới hạn gia tốc) thay "lao tới rồi đứng chờ" theo nhịp
+  # camera. Các giới hạn khớp mềm, giới hạn mô-men, dead-man, tăng tốc mềm lúc engage, né va chạm hai tay giữ nguyên.
+  max_vel_deg_s: [120, 120, 120, 120, 180, 180, 180]
+  velocity_tracking:
+    enabled: true
+    gain: 12.0
+    max_acc_deg_s2: [600, 600, 800, 800, 2000, 2000, 2000]
+  # Giới hạn khớp MJCF v1 hẹp hơn URDF ở J4 (phải max 131.8°, trái 128.9°) và J5-J7 (~±86°): hạ J4 xuống 128°
+  # để SafetyGate không ra lệnh vượt giới hạn mô hình (MuJoCo sẽ kẹp, robot lệch khỏi lệnh).
+  soft_limits_deg:
+    right: [[-75, 75], [-9, 90], [-85, 85], [0, 128], [-85, 85], [-40, 40], [-80, 80]]
+    left:  [[-75, 75], [-90, 9], [-85, 85], [0, 128], [-85, 85], [-40, 40], [-80, 80]]

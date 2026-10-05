@@ -251,6 +251,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
         gate.reset(q_meas)
         pipe.seed(q_meas)
 
+        simulated = robot_kind in ("sim", "mujoco")   # không có motor thật: tự engage khi READY, không hỏi yes
         if robot_kind == "openarm":
             print("\nROBOT THẬT. Kiểm tra: E-stop trong tay, không ai trong tầm với, tay đang thả xuôi.")
             if input("Gõ 'yes' để bật motor: ").strip().lower() != "yes":
@@ -299,7 +300,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                 print("Tự động hiệu chuẩn tay trung tính cho:", auto_done)
             ready_live = all(pipe.hand_calibrated[s] and pipe.calib_ready_now[s] for s in pipe.robot_sides)
             now = time.monotonic()
-            if robot_kind == "sim" and not engaged and not auto_engage_used:
+            if simulated and not engaged and not auto_engage_used:
                 if ready_live:
                     ready_since = now if ready_since is None else ready_since
                     auto_countdown = max(0.0, auto_engage_s - (now - ready_since))
@@ -412,10 +413,11 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                     for s in pipe.robot_sides:
                         lines.append(f"{s} that (URDF, do): " +
                                      " ".join(f"{v:5.0f}" for v in np.rad2deg(q_real[s][:7])))
-                elif robot_kind == "openarm":
-                    q_real = robot.read()
+                elif robot_kind in ("openarm", "mujoco"):
+                    q_real = robot.read()             # mujoco: góc thật trong mô phỏng (trễ / võng so với lệnh)
                 put_lines(cam, lines)
-                title = "lenh (dam) / muc tieu (mo)" + (" / do that (xanh la)" if q_real else "")
+                title = "lenh (dam) / muc tieu (mo)" + ((" / MuJoCo (xanh la)" if robot_kind == "mujoco" else
+                                                          " / do that (xanh la)") if q_real else "")
                 view = compose_view(cam, lambda size, zoom: draw_robot(pipe.kins, cmd, size=size, q_target=targets,
                                                                        q_meas=q_real, title=title,
                                                                        zoom_to_arms=zoom),

@@ -237,3 +237,12 @@ robot:
     urdf: null            # đường dẫn tới openarm_description/.../openarm_v1.0/urdf/example/v1.urdf
   rest_pose_deg: [0, 0, 0, 0, 0, 0, 0]   # tư thế nghỉ (tay thả xuôi) để về trước khi tắt
   park_vel_deg_s: 20
+  # Chỉ dùng với --robot mujoco (openarm_shadow/robot/mujoco_robot.py). Nên chạy kèm config/mujoco_sim.yaml.
+  mujoco:
+    model: openarm_mujoco/v1/scene.xml   # MJCF OpenArm v1 (enactic/openarm_mujoco), góc khớp = góc URDF
+    mode: physics          # physics: actuator position kp/kv + vật lý | kinematic: ghi thẳng qpos = lệnh
+    gravity_comp: true     # physics: bù trọng lực các khớp tay (không bù: J1 võng ~5° khi tay đưa ra trước)
+    viewer: true           # mở cửa sổ MuJoCo 3D
+    viewer_fps: 30         # cửa sổ MuJoCo dùng chung GPU với MediaPipe: vẽ nhanh / bóng to làm nhận diện chậm đi
+    viewer_shadow_size: 2048
+    gripper_stroke_m: 0.044   # hành trình ngón kẹp trong MJCF; kẹp 0..1 -> 0..0.044 m
