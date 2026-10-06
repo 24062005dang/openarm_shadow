@@ -114,13 +114,21 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
         log = {"t": [], **{f"{k}_{s}": [] for k in ("target", "cmd", "conf", "fus", "raw", "held", "grip_obs")
                            for s in pipe.robot_sides}}
         fps_t, fps = time.monotonic(), 0.0
-        auto_engage_s = float(cfg.get("calibration", {}).get("hand_auto", {}).get("auto_engage_sim_s", 3.0))
+        ha = cfg.get("calibration", {}).get("hand_auto", {})
+        auto_engage_s = float(ha.get("auto_engage_sim_s", 3.0))
+        # ROBOT THẬT tự bám khi READY đủ N giây: tuỳ chọn, mặc định TẮT (calibration.hand_auto.auto_engage_real_s > 0,
+        # xem config/auto_engage_real.yaml). Vẫn phải gõ 'yes' bật motor; chỉ tự engage MỘT lần mỗi lần chạy (đã nhả
+        # bằng SPACE / E-stop thì phải bấm SPACE lại, không tự bám lại); engage vẫn tăng tốc mềm engage_blend_s.
+        auto_real_s = float(ha.get("auto_engage_real_s") or 0.0)
+        real_auto = robot_kind == "openarm" and auto_real_s > 0
+        if real_auto:
+            auto_engage_s = auto_real_s
         ready_since = None
         auto_engage_used = False
         auto_countdown = None
-        msg = ("GIU READY 3s: tu dong sync | SPACE: dung/chay thu cong | c: calib lai | b: hoc lai than | g: calib kep"
-               " | q: thoat"
-               if simulated else
+        msg = (f"GIU READY {auto_engage_s:.0f}s: tu dong sync | SPACE: dung/chay thu cong | c: calib lai | "
+               "b: hoc lai than | g: calib kep | q: thoat"
+               if simulated or real_auto else
                "SPACE: engage | c: hieu chuan tay | b: hoc lai than | g: calib kep | p: ve nghi | q: thoat")
         if real is not None:
             msg = "DRY RUN: motor TAT. Xanh la = robot that. " + msg
@@ -152,7 +160,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
             ready_live = perc.body_ready() and all(pipe.hand_calibrated[s] and pipe.calib_ready_now[s]
                                                    for s in pipe.robot_sides)
             now = time.monotonic()
-            if simulated and not engaged and not auto_engage_used:
+            if (simulated or real_auto) and not engaged and not auto_engage_used and ctl.error is None:
                 if ready_live:
                     ready_since = now if ready_since is None else ready_since
                     auto_countdown = max(0.0, auto_engage_s - (now - ready_since))
@@ -164,7 +172,8 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                         engaged = True
                         auto_engage_used = True
                         auto_countdown = None
-                        print("Simulation tự đồng bộ sau khi READY đủ", auto_engage_s, "giây")
+                        print(("ROBOT THẬT" if real_auto else "Simulation"), "tự đồng bộ sau khi READY đủ",
+                              auto_engage_s, "giây. Nhả: SPACE (hoặc E-stop).")
                 else:
                     ready_since = None
                     auto_countdown = None

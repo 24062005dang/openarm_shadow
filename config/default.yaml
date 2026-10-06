@@ -144,6 +144,7 @@ calibration:
     max_fore_from_down_deg: 80   # cho phép khuỷu thả lỏng; cổ tay vẫn thấp hơn khuỷu
     max_palm_from_camera_deg: 50 # pháp tuyến lòng bàn tay hướng về D455
     auto_engage_sim_s: 3.0       # chỉ simulation: giữ READY liên tục rồi tự engage
+    auto_engage_real_s: 0        # robot THẬT: > 0 = giữ READY chừng này giây rồi tự engage (0 = tắt, bấm SPACE)
 
 mapping:
   # direct: tay phải người -> tay phải robot (như đứng "bên trong" robot)
