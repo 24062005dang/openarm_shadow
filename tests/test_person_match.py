@@ -3,8 +3,9 @@ import types
 
 import numpy as np
 
-from openarm_shadow.multiview import MultiViewPerception
-from openarm_shadow.perception import ArmObs, Frame, L_SH, R_SH
+from openarm_shadow.fusion.multiview import MultiViewPerception
+from openarm_shadow.core.types import ArmObs, Frame
+from openarm_shadow.vision.landmarks import L_SH, R_SH
 from test_multiview import human_world, two_cams
 
 SIZE = np.array([640.0, 480.0])
@@ -97,7 +98,7 @@ def test_no_reference_lets_camera_lock_itself():
 
 def test_perception_uses_cross_camera_match():
     from test_operator_lock import _Res, person
-    from openarm_shadow.perception import Perception
+    from openarm_shadow.vision.perception import Perception
     perc = Perception.__new__(Perception)
     perc.pose_interval, perc.pose_hold, perc._pose_count, perc._pose_misses, perc._last_pose = 1, 0, 0, 0, None
     perc.lock_dist, perc.lock_keep, perc._lock = 1.0, 15, None

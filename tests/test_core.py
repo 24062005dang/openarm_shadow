@@ -3,11 +3,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from openarm_shadow.filters import JointFilter, OneEuro
-from openarm_shadow.geometry import make_frame, rot, seg_seg_distance, sp1, sp2, unit
-from openarm_shadow.kinematics import ArmKinematics
-from openarm_shadow.retarget import ArmRetargeter, mirror_rotation, mirror_vector
-from openarm_shadow.safety import SafetyGate
+from openarm_shadow.filtering.filters import JointFilter, OneEuro
+from openarm_shadow.core.geometry import make_frame, rot, seg_seg_distance, sp1, sp2, unit
+from openarm_shadow.core.kinematics import ArmKinematics
+from openarm_shadow.mapping.retarget import ArmRetargeter, mirror_rotation, mirror_vector
+from openarm_shadow.safety.gate import SafetyGate
 from openarm_shadow.config import load_config
 
 rng = np.random.default_rng(0)
@@ -104,7 +104,7 @@ def test_human_neutral_gives_zero_pose():
     kin = ArmKinematics("right")
     rt = ArmRetargeter(kin)
     down = np.array([0, 0, -1.0])
-    from openarm_shadow.retarget import DEFAULT_HAND_NEUTRAL
+    from openarm_shadow.mapping.retarget import DEFAULT_HAND_NEUTRAL
     q, info = rt.solve(down, down, DEFAULT_HAND_NEUTRAL, np.zeros(7))
     assert np.abs(q).max() < 1e-4   # URDF làm tròn π/2 thành 1.5708
 
@@ -145,7 +145,7 @@ def test_limits_respected():
 
 
 def test_mirror_rotation_is_proper():
-    from openarm_shadow.retarget import DEFAULT_HAND_NEUTRAL
+    from openarm_shadow.mapping.retarget import DEFAULT_HAND_NEUTRAL
     Hm = mirror_rotation(DEFAULT_HAND_NEUTRAL)
     assert np.linalg.det(Hm) == pytest.approx(1.0)
     assert np.allclose(mirror_vector([1, 2, 3]), [1, -2, 3])
@@ -197,8 +197,9 @@ def test_wrist_fast_config_tracks_faster():
 
 
 # ---------------- an toàn ----------------
-def make_gate():
+def make_gate(collision=False):
     cfg = load_config()
+    cfg["safety"]["self_collision"]["enabled"] = collision     # mặc định tắt (chuyền vật); test va chạm bật lại
     kins = {s: ArmKinematics(s) for s in ("right", "left")}
     g = SafetyGate(kins, cfg["safety"])
     g.reset({s: np.zeros(8) for s in kins})
@@ -232,7 +233,7 @@ def test_gate_deadman():
 
 
 def test_gate_blocks_arm_collision():
-    g = make_gate()
+    g = make_gate(collision=True)
     g.lo = {s: np.full(7, -np.pi) for s in g.sides}
     g.hi = {s: np.full(7, np.pi) for s in g.sides}
     g.engage(-10)
@@ -249,7 +250,7 @@ def test_gate_blocks_arm_collision():
 
 def test_gate_not_stuck_near_collision():
     """Đang sát ngưỡng va chạm, mục tiêu về tư thế nghỉ: gate phải thoát ra được, không đứng im mãi."""
-    g = make_gate()
+    g = make_gate(collision=True)
     M = np.array([-1, -1, -1, 1, -1, -1, -1, 1])
     near = np.append(np.deg2rad([69, -5, -15, 109, 0, 0, 0]), 0.5)
     g.reset({"right": near, "left": M * near})
@@ -291,9 +292,16 @@ def test_gate_deadman_when_only_held_targets_arrive():
 
 
 def test_grip_filter_uses_grip_units():
-    from openarm_shadow.filters import JointFilter
+    from openarm_shadow.filtering.filters import JointFilter
     f = JointFilter(2, 1.0, 0.0, [1.0, 0.05], [35, 35], 0.2, 0.5, angular=[True, False])
     assert f.dead[1] == 0.05 and f.jump[1] == 35
     f(np.array([0.0, 0.0]), np.ones(2), 0.0)
     out, held = f(np.array([0.0, 1.0]), np.ones(2), 0.033)   # kẹp mở hết trong 1 khung: không bị coi là nhảy
     assert not held[1] and out[1] > 0.1
+
+
+def test_self_collision_off_by_default_for_handover():
+    """Mặc định tắt chống va chạm hai tay để chuyền vật: hai bàn tay được tới sát nhau."""
+    assert not load_config()["safety"]["self_collision"]["enabled"]
+    g = make_gate()
+    assert not g.col_on

@@ -1,7 +1,8 @@
 """Khoá người điều khiển: Pose thấy nhiều người, không nhảy sang người khác trong khung."""
 import numpy as np
 
-from openarm_shadow.perception import L_SH, R_SH, select_operator
+from openarm_shadow.vision.landmarks import L_SH, R_SH
+from openarm_shadow.vision.perception import select_operator
 
 
 def person(cx, width, vis=0.9):
@@ -44,7 +45,7 @@ class _Res:
 
 
 def test_perception_keeps_lock_through_short_occlusion():
-    from openarm_shadow.perception import Perception
+    from openarm_shadow.vision.perception import Perception
     perc = Perception.__new__(Perception)
     perc.pose_interval, perc.pose_hold, perc._pose_count, perc._pose_misses, perc._last_pose = 1, 0, 0, 0, None
     perc.lock_dist, perc.lock_keep, perc._lock = 1.0, 15, None
@@ -59,7 +60,7 @@ def test_perception_keeps_lock_through_short_occlusion():
 
 
 def test_first_pick_prefers_full_body_over_cut_off_person():
-    from openarm_shadow.perception import L_HIP, R_HIP, NOSE
+    from openarm_shadow.vision.landmarks import L_HIP, R_HIP, NOSE
     standing = person(0.5, 0.26)
     seated = person(0.6, 0.30)
     seated[[NOSE, L_HIP, R_HIP], 2] = 0.05                     # ngồi sau bàn, hông khuất, đầu lệch khỏi khung

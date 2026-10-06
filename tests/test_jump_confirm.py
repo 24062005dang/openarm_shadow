@@ -5,8 +5,8 @@ from pathlib import Path
 
 import numpy as np
 
-from openarm_shadow.filters import JointFilter
-from openarm_shadow.multiview import fuse_point
+from openarm_shadow.filtering.filters import JointFilter
+from openarm_shadow.fusion.triangulation import fuse_point
 
 
 def make():
@@ -83,7 +83,7 @@ def test_fusion_row_reads_arm_points():
     from types import SimpleNamespace
 
     from openarm_shadow.app import fusion_row
-    from openarm_shadow.perception import ARM_IDX
+    from openarm_shadow.vision.landmarks import ARM_IDX
     s, e, w = ARM_IDX["right"]
     fr = SimpleNamespace(fusion={"points": {s: {"views": 2, "err_px": 3.0, "depth": 0},
                                             e: {"views": 1, "err_px": np.nan, "depth": 1}}})

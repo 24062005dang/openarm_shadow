@@ -8,7 +8,7 @@ def test_gpu_falls_back_to_cpu(tmp_path, monkeypatch, capsys):
     pytest.importorskip("mediapipe")
     from mediapipe.tasks import python as mpt
     from mediapipe.tasks.python import vision
-    from openarm_shadow.perception import Perception
+    from openarm_shadow.vision.perception import Perception
 
     made = []
 

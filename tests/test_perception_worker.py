@@ -2,7 +2,7 @@
 import threading
 import time
 
-from openarm_shadow.app import PerceptionWorker
+from openarm_shadow.vision.worker import PerceptionWorker
 
 
 class FakeCap:

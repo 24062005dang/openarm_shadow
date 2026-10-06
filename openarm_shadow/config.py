@@ -24,4 +24,21 @@ def load_config(path=None):
     for k in ("pose", "hand"):
         p = Path(cfg["models"][k])
         cfg["models"][k] = str(p if p.is_absolute() else ROOT / p)
+    _resolve_mirror_limits(cfg)
     return cfg
+
+
+def _resolve_mirror_limits(cfg):
+    """`left: mirror` (hoặc `right: mirror`) trong safety.soft_limits_deg / robot.motor_limits_deg: tay đó lấy giới hạn
+    của tay kia qua phép phản chiếu (mapping.arm.MIRROR_SIGNS). Tính SAU khi đã ghép mọi file config, nên đổi giới hạn
+    tay phải ở file nào (first_real, wrist_real_30...) thì tay trái cũng đổi theo đúng như vậy."""
+    from openarm_shadow.mapping.arm import mirror_limits_deg
+    for sec, key in (("safety", "soft_limits_deg"), ("robot", "motor_limits_deg")):
+        lims = (cfg.get(sec) or {}).get(key)
+        if not isinstance(lims, dict):
+            continue
+        for side, other in (("left", "right"), ("right", "left")):
+            if lims.get(side) == "mirror":
+                if isinstance(lims.get(other), str) or lims.get(other) is None:
+                    raise ValueError(f"{sec}.{key}: {side} = mirror nhưng {other} không có giới hạn cụ thể")
+                lims[side] = mirror_limits_deg(lims[other])

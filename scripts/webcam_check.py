@@ -21,8 +21,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from openarm_shadow.config import load_config
-from openarm_shadow.sources import OpenCVSource, webcam_options
-from openarm_shadow.viz import put_lines
+from openarm_shadow.camera.sources import OpenCVSource, webcam_options
+from openarm_shadow.display.viz import put_lines
 
 
 def sharpness(bgr):

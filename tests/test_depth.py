@@ -1,10 +1,16 @@
 import numpy as np
 import pytest
 
-from openarm_shadow.perception import (deproject_pixel, fit_metric_depth, fuse_hand_landmarks,
-                                       fit_palm_plane, open_finger_count, palm_frame_from_depth,
-                                       rotation_distance, sample_depth, sample_depth_with_confidence,
-                                       slerp_rotation)
+from openarm_shadow.core.rotation import rotation_distance, slerp_rotation
+from openarm_shadow.vision.depth import (
+    deproject_pixel,
+    fit_metric_depth,
+    fuse_hand_landmarks,
+    fit_palm_plane,
+    open_finger_count,
+    palm_frame_from_depth,
+    sample_depth,
+    sample_depth_with_confidence)
 
 
 def test_deproject_center_and_offset():
@@ -135,7 +141,7 @@ def test_slerp_rotation_has_expected_half_angle():
 def _fake_perception():
     """Perception không cần file model: thay detector MediaPipe bằng kết quả dựng sẵn."""
     import types
-    from openarm_shadow.perception import Perception
+    from openarm_shadow.vision.perception import Perception
     p = Perception.__new__(Perception)
     p.mp = types.SimpleNamespace(Image=lambda **k: None, ImageFormat=types.SimpleNamespace(SRGB=0))
     p._last_ts = -1

@@ -5,191 +5,39 @@ Hai luồng:
 - luồng điều khiển: chạy đều `control_hz`, bước SafetyGate (giới hạn vận tốc, dead-man, va chạm)
   rồi gửi lệnh xuống robot.
 
-Phím: SPACE = engage / nhả (ly hợp) · c = hiệu chuẩn hướng bàn tay trung tính · p = về tư thế nghỉ
+Phím: SPACE = engage / nhả (ly hợp) · c = hiệu chuẩn hướng bàn tay trung tính · b = học lại khung thân
+      (orientation.body_ref) · p = về tư thế nghỉ
       q hoặc ESC = về tư thế nghỉ rồi thoát.
 """
 from __future__ import annotations
 
-import threading
 import time
 
 import cv2
 import numpy as np
 
-from .perception import ARM_IDX, Perception
-from .pipeline import ShadowPipeline
-from .robot import make_robot
-from .safety import SafetyGate
-from .multiview import MultiCameraSource, MultiViewPerception
-from .sources import open_source
-from .viz import compose_view, draw_human, draw_robot, put_lines
+from openarm_shadow.control.controller import Controller, park, uncalibrated_free_wrists
+from openarm_shadow.display.overlay import fusion_lines
+from openarm_shadow.vision.landmarks import ARM_IDX
+from openarm_shadow.vision.worker import PerceptionWorker
+from openarm_shadow.vision.perception import Perception
+from openarm_shadow.mapping.pipeline import ShadowPipeline
+from openarm_shadow.robot import make_robot
+from openarm_shadow.safety.gate import SafetyGate
+from openarm_shadow.camera.multi_source import MultiCameraSource
+from openarm_shadow.fusion.multiview import MultiViewPerception
+from openarm_shadow.camera.sources import open_source
+from openarm_shadow.display.viz import compose_view, draw_human, draw_robot, put_lines
 
 
-class Controller(threading.Thread):
-    def __init__(self, robot, gate, hz):
-        super().__init__(daemon=True)
-        self.robot, self.gate, self.dt = robot, gate, 1.0 / hz
-        self.lock = threading.Lock()
-        self.running = True
-        self.error = None
-        self.cmd = None
-        self.trace = None             # list -> ghi (t, lệnh, đo) mỗi nhịp điều khiển
-
-    def run(self):
-        t_prev = time.monotonic()
-        try:
-            while self.running:
-                now = time.monotonic()
-                with self.lock:
-                    cmd = self.gate.step(now - t_prev, now)
-                    self.cmd = {s: v.copy() for s, v in cmd.items()}
-                    dq = None if self.gate.dq is None else {s: v.copy() for s, v in self.gate.dq.items()}
-                t_prev = now
-                if dq is not None:
-                    self.robot.send(self.cmd, dq)
-                else:
-                    self.robot.send(self.cmd)
-                if self.trace is not None:          # ghi 100 Hz: lệnh và góc đo (đo độ trễ, scripts/measure_lag.py)
-                    meas = self.robot.read()
-                    self.trace.append((now, {s: self.cmd[s].copy() for s in self.cmd},
-                                       {s: np.asarray(meas[s], float).copy() for s in meas}))
-                time.sleep(max(0.0, self.dt - (time.monotonic() - now)))
-        except Exception as e:     # lỗi phần cứng: dừng vòng điều khiển, luồng chính sẽ thoát an toàn
-            self.error = e
-            self.running = False
 
 
-def uncalibrated_free_wrists(pipe, gate):
-    """Các tay robot có J5-J7 được phép cử động (giới hạn mềm khác [0, 0]) mà bàn tay chưa hiệu chuẩn."""
-    out = []
-    for s in pipe.robot_sides:
-        free = bool(np.any(gate.hi[s][4:7] - gate.lo[s][4:7] > 1e-6))
-        if free and not pipe.hand_calibrated[s]:
-            out.append(s)
-    return out
 
 
-def fusion_lines(fr, sides):
-    """Dòng chẩn đoán fusion: số camera thấy vai/khuỷu/cổ tay, sai số chiếu lại, xung đột depth, bàn tay."""
-    fi = fr.fusion or {}
-    people = fi.get("people")
-    out = [f"fusion {fi.get('views', 0)} cam | lech khung {fi.get('skew_ms', 0.0):.0f} ms"
-           + (" | nguoi thay: " + "/".join(str(n) for n in people) + " (khoa 1 nguoi)" if people else "")
-           + (f" | MAT KHUNG: {', '.join(fi['stale'])}" if fi.get("stale") else "")]
-    match = fi.get("person") or {}
-    if match:
-        # Camera phụ có chọn đúng người camera 0 đang khoá không (multiview._match_operator)
-        def txt(m):
-            if m["mode"] == "tu khoa":
-                return "tu khoa"
-            err = m.get("err", float("nan"))
-            val = "" if not np.isfinite(err) else (f" {err:.2f}" if m["mode"] == "3D" else f" {err:.0f}px")
-            return ("khop " if m["ok"] else "KHONG KHOP ") + m["mode"] + val
-        out.append("cung 1 nguoi: " + " | ".join(f"{n} {txt(m)}" for n, m in match.items()))
-    names = {"right": (12, 14, 16), "left": (11, 13, 15)}
-    for s in sides:
-        pts = fi.get("points", {})
-        if fi.get("body") == "front":
-            out.append(f"{s}: vai/khuyu/co tay tu Pose camera 0")
-            pts = None
-        parts = []
-        for tag, i in zip(("vai", "khuyu", "co tay"), names[s] if pts is not None else ()):
-            p = pts.get(i)
-            if p is None:
-                parts.append(f"{tag} -")
-                continue
-            err = p.get("err_px", float("nan"))
-            parts.append(f"{tag} {p['views']}cam" + (f" {err:.0f}px" if np.isfinite(err) else "") +
-                         (" D" if p.get("depth") else "") + (" !" if p.get("conflict") else ""))
-        if parts:
-            out.append(f"{s}: " + " | ".join(parts))
-        h = fi.get(f"hand_{s}")
-        if h:
-            extra = ""
-            if h.get("fit") == "KABSCH" and np.isfinite(h.get("fit_mm", np.nan)):
-                extra += f", khop long tay {h['fit_mm']:.0f}mm"
-            elif h.get("fit") == "3PT":
-                extra += ", dang hoc khuon long tay"
-            if h.get("rejected"):
-                extra += f", bo {h['rejected']} cam (xa co tay)"
-            if h.get("bones_dropped"):
-                extra += f", bo {h['bones_dropped']} diem (dot bat thuong)"
-            if h.get("sources"):
-                extra += " | nguon: " + "+".join(h["sources"])
-            out.append(f"  ban tay {h['views']}cam {h['points']}/21 diem, nhin ro {h['quality']:.2f}, "
-                       f"{h['mode']}{extra}")
-    return out
 
 
-def park(robot, gate, rest, vel_deg_s, timeout=25.0):
-    """Đưa hai tay về tư thế nghỉ với tốc độ thấp (chạy sau khi đã dừng luồng điều khiển)."""
-    saved = gate.max_vel.copy()
-    gate.max_vel = np.full(7, np.deg2rad(vel_deg_s))
-    gate.engage(time.monotonic() - 10)     # bỏ qua pha tăng tốc
-    if hasattr(robot, "returning"):
-        robot.returning = True             # đang về: số đọc rác chỉ bị bỏ qua, không dừng giữa chừng
-    try:
-        t0 = t_prev = time.monotonic()
-        while time.monotonic() - t0 < timeout:
-            now = time.monotonic()
-            tgt = {s: np.append(rest, np.nan) for s in gate.sides}
-            gate.set_target(tgt, now)
-            cmd = gate.step(now - t_prev, now)
-            t_prev = now
-            robot.send(cmd)
-            if max(np.max(np.abs(cmd[s][:7] - rest)) for s in gate.sides) < np.deg2rad(1.0):
-                break
-            time.sleep(0.01)
-    finally:
-        if hasattr(robot, "returning"):
-            robot.returning = False
-        gate.max_vel = saved
-        gate.disengage()
 
 
-class PerceptionWorker(threading.Thread):
-    """Đọc camera + MediaPipe ở luồng riêng: luồng chính vẽ/điều khiển khung N trong lúc khung N+1 đang được nhận
-    diện (trước đây làm nối tiếp nên vẽ chặn nhận diện). Luôn giữ kết quả MỚI NHẤT; luồng chính chậm thì bỏ khung cũ."""
-
-    def __init__(self, cap, process):
-        super().__init__(daemon=True, name="perception")
-        self.cap, self.process = cap, process
-        self.cond = threading.Condition()
-        self.latest, self.seq, self.taken = None, 0, 0
-        self.running, self.done, self.error = True, False, None
-
-    def run(self):
-        try:
-            while self.running:
-                ok, sample = self.cap.read()
-                if not ok:
-                    self.error = getattr(self.cap, "error", None) or "Nguồn video hết khung hoặc mất kết nối."
-                    break
-                item = (sample, *self.process(sample))
-                with self.cond:
-                    self.latest, self.seq = item, self.seq + 1
-                    self.cond.notify_all()
-        except BaseException as e:           # lỗi nhận diện: báo cho luồng chính, không chết im lặng
-            self.error = f"{type(e).__name__}: {e}"
-        finally:
-            with self.cond:
-                self.done = True
-                self.cond.notify_all()
-
-    def get(self, timeout=10.0):
-        """Kết quả mới (sample, frame, extra) chưa lấy; None nếu luồng đã dừng (xem .error) hoặc quá timeout."""
-        with self.cond:
-            if not self.cond.wait_for(lambda: self.seq > self.taken or self.done, timeout):
-                self.error = f"không có khung mới trong {timeout:.0f} s"
-                return None
-            if self.seq <= self.taken:
-                return None
-            self.taken = self.seq
-            return self.latest
-
-    def stop(self):
-        self.running = False
-        self.join(timeout=5.0)               # cap.read() có thể chờ tới 3 s
 
 
 def fusion_row(fr, human_side):
@@ -238,7 +86,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
         if robot_kind == "openarm" and dry_run:
             real = make_robot("openarm", cfg, pipe.robot_sides)
             q_meas = real.connect()
-            from .robot.sim import SimRobot
+            from openarm_shadow.robot.sim import SimRobot
             robot = SimRobot(pipe.robot_sides, q0=q_meas)
             robot_kind = "sim"
         else:
@@ -251,6 +99,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
         gate.reset(q_meas)
         pipe.seed(q_meas)
 
+        simulated = robot_kind in ("sim", "mujoco")   # không có motor thật: tự engage khi READY, không hỏi yes
         if robot_kind == "openarm":
             print("\nROBOT THẬT. Kiểm tra: E-stop trong tay, không ai trong tầm với, tay đang thả xuôi.")
             if input("Gõ 'yes' để bật motor: ").strip().lower() != "yes":
@@ -262,15 +111,25 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
         ctl.trace = trace
         ctl.start()
         rest = np.deg2rad(np.asarray(cfg["robot"]["rest_pose_deg"], float))
-        log = {"t": [], **{f"{k}_{s}": [] for k in ("target", "cmd", "conf", "fus") for s in pipe.robot_sides}}
+        log = {"t": [], **{f"{k}_{s}": [] for k in ("target", "cmd", "conf", "fus", "raw", "held", "grip_obs")
+                           for s in pipe.robot_sides}}
         fps_t, fps = time.monotonic(), 0.0
-        auto_engage_s = float(cfg.get("calibration", {}).get("hand_auto", {}).get("auto_engage_sim_s", 3.0))
+        ha = cfg.get("calibration", {}).get("hand_auto", {})
+        auto_engage_s = float(ha.get("auto_engage_sim_s", 3.0))
+        # ROBOT THẬT tự bám khi READY đủ N giây: tuỳ chọn, mặc định TẮT (calibration.hand_auto.auto_engage_real_s > 0,
+        # xem config/auto_engage_real.yaml). Vẫn phải gõ 'yes' bật motor; chỉ tự engage MỘT lần mỗi lần chạy (đã nhả
+        # bằng SPACE / E-stop thì phải bấm SPACE lại, không tự bám lại); engage vẫn tăng tốc mềm engage_blend_s.
+        auto_real_s = float(ha.get("auto_engage_real_s") or 0.0)
+        real_auto = robot_kind == "openarm" and auto_real_s > 0
+        if real_auto:
+            auto_engage_s = auto_real_s
         ready_since = None
         auto_engage_used = False
         auto_countdown = None
-        msg = ("GIU READY 3s: tu dong sync | SPACE: dung/chay thu cong | c: calib lai | g: calib kep | q: thoat"
-               if robot_kind == "sim" else
-               "SPACE: engage | c: hieu chuan tay | g: calib kep | p: ve nghi | q: thoat")
+        msg = (f"GIU READY {auto_engage_s:.0f}s: tu dong sync | SPACE: dung/chay thu cong | c: calib lai | "
+               "b: hoc lai than | g: calib kep | q: thoat"
+               if simulated or real_auto else
+               "SPACE: engage | c: hieu chuan tay | b: hoc lai than | g: calib kep | p: ve nghi | q: thoat")
         if real is not None:
             msg = "DRY RUN: motor TAT. Xanh la = robot that. " + msg
         disp = cfg.get("display", {}) or {}
@@ -297,9 +156,11 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
             auto_done = [] if engaged else pipe.auto_calibrate_hand_neutral(fr)
             if auto_done:
                 print("Tự động hiệu chuẩn tay trung tính cho:", auto_done)
-            ready_live = all(pipe.hand_calibrated[s] and pipe.calib_ready_now[s] for s in pipe.robot_sides)
+            # Tham chiếu thân (orientation.body_ref) phải học xong trước: hiệu chuẩn tay và retarget đều theo khung thân
+            ready_live = perc.body_ready() and all(pipe.hand_calibrated[s] and pipe.calib_ready_now[s]
+                                                   for s in pipe.robot_sides)
             now = time.monotonic()
-            if robot_kind == "sim" and not engaged and not auto_engage_used:
+            if (simulated or real_auto) and not engaged and not auto_engage_used and ctl.error is None:
                 if ready_live:
                     ready_since = now if ready_since is None else ready_since
                     auto_countdown = max(0.0, auto_engage_s - (now - ready_since))
@@ -311,7 +172,8 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                         engaged = True
                         auto_engage_used = True
                         auto_countdown = None
-                        print("Simulation tự đồng bộ sau khi READY đủ", auto_engage_s, "giây")
+                        print(("ROBOT THẬT" if real_auto else "Simulation"), "tự đồng bộ sau khi READY đủ",
+                              auto_engage_s, "giây. Nhả: SPACE (hoặc E-stop).")
                 else:
                     ready_since = None
                     auto_countdown = None
@@ -333,6 +195,14 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                     log[f"cmd_{s}"].append(cmd[s])
                     log[f"conf_{s}"].append(pipe.conf[s])
                     log[f"fus_{s}"].append(fusion_row(fr, pipe.human_side_for(s)))
+                    log[f"raw_{s}"].append(pipe.raw_targets[s])
+                    log[f"held_{s}"].append(pipe.held[s].copy())
+                    # chẩn đoán kẹp: [r fusion, r nhỏ nhất các camera, số camera thấy bàn tay, đang chờ nhả]
+                    ob = fr.arms.get(pipe.human_side_for(s))
+                    rv = [x for x in (getattr(ob, "grip_views", None) or []) if np.isfinite(x)]
+                    log[f"grip_obs_{s}"].append([np.nan if ob is None or ob.grip is None else ob.grip,
+                                                 min(rv) if rv else np.nan, len(rv),
+                                                 float(pipe.grip[s].releasing)])
             now = time.monotonic()
             fps = 0.9 * fps + 0.1 / max(now - fps_t, 1e-3)
             fps_t = now
@@ -340,9 +210,14 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                 if multi:
                     cam = perc.draw(sample, fr, view_frames=extra[0], world=extra[1])
                 else:
-                    cam = draw_human(frame_bgr.copy(), fr)
+                    ref = getattr(perc, "body_ref", None)
+                    est = bool(ref is not None and ref.ready and ref.weights.get("R", 1.0) < 0.5)
+                    cam = draw_human(frame_bgr.copy(), fr, torso_estimated=est)
                     if cfg["camera"]["mirror_display"]:
                         cam = cv2.flip(cam, 1)
+                    if est:                          # sau khi lật: chữ không bị ngược
+                        put_lines(cam, ["THAN: dung huong tham chieu (bi che)"], org=(10, cam.shape[0] - 40),
+                                  color=(0, 140, 255))
                 ready = ready_live
                 cx, cy = cam.shape[1] - 28, 28
                 if ready and not engaged:
@@ -384,6 +259,7 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                               f"{s}:{100 * pipe.calib_progress[s]:.0f}% [{pipe.calib_hint[s]}]"
                               for s in pipe.robot_sides)
                 lines.append("Auto calib tay: " + cs)
+                lines.append(perc.body_status())
                 for s in pipe.robot_sides:
                     inf = pipe.last_info.get(s)
                     if inf is not None:
@@ -412,10 +288,11 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                     for s in pipe.robot_sides:
                         lines.append(f"{s} that (URDF, do): " +
                                      " ".join(f"{v:5.0f}" for v in np.rad2deg(q_real[s][:7])))
-                elif robot_kind == "openarm":
-                    q_real = robot.read()
+                elif robot_kind in ("openarm", "mujoco"):
+                    q_real = robot.read()             # mujoco: góc thật trong mô phỏng (trễ / võng so với lệnh)
                 put_lines(cam, lines)
-                title = "lenh (dam) / muc tieu (mo)" + (" / do that (xanh la)" if q_real else "")
+                title = "lenh (dam) / muc tieu (mo)" + ((" / MuJoCo (xanh la)" if robot_kind == "mujoco" else
+                                                          " / do that (xanh la)") if q_real else "")
                 view = compose_view(cam, lambda size, zoom: draw_robot(pipe.kins, cmd, size=size, q_target=targets,
                                                                        q_meas=q_real, title=title,
                                                                        zoom_to_arms=zoom),
@@ -434,6 +311,9 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                             # thể lệch tới 180° -> cổ tay chạy thẳng tới giới hạn khi engage. Không cho engage.
                             print("CHƯA ENGAGE: chưa hiệu chuẩn bàn tay cho", blocked,
                                   "- thả tay xuôi, xoè bàn tay, lòng bàn tay nhìn camera, đứng yên tới khi READY.")
+                        elif not perc.body_ready():
+                            print("CHƯA ENGAGE: chưa học tham chiếu thân -", perc.body_status(),
+                                  "- đứng thẳng, thả tay xuôi cho camera thấy rõ vai và hông.")
                         else:
                             q_now = robot.read()
                             pipe.seed(q_now)
@@ -445,6 +325,17 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                     else:
                         print("Hiệu chuẩn tay trung tính cho:",
                               pipe.calibrate_hand_neutral(fr) or "không thấy bàn tay")
+                elif k == ord("b"):
+                    if gate.engaged:
+                        print("Nhả robot (SPACE) trước khi học lại khung thân.")
+                    else:
+                        # Hướng tay trung tính đã hiệu chuẩn theo khung thân cũ -> hiệu chuẩn lại cùng lúc (tự động
+                        # khi thả tay xuôi, cùng tư thế dùng để học khung thân).
+                        perc.relearn_body()
+                        for s in pipe.robot_sides:
+                            pipe.hand_calibrated[s] = False
+                            pipe._reset_auto_calib(s)
+                        print("Học lại khung thân + hiệu chuẩn tay: đứng thẳng, thả tay xuôi, xoè bàn tay, đứng yên.")
                 elif k == ord("g"):
                     pipe.start_grip_calibration(fr.t)
                     print(f"Hiệu chuẩn kẹp {pipe.grip[pipe.robot_sides[0]].calib_s:.0f} s: chụm ngón cái-trỏ hết cỡ "

@@ -1,7 +1,13 @@
-# Fusion 2 camera (webcam laptop + D435i)
+# Fusion nhiều camera (2 camera, 3 camera)
 
-Cấu hình hiện tại (`config/fusion_2cam.yaml`): **webcam laptop trực diện** (camera 0, khung tham chiếu, không có
-depth) + **RealSense D435i lệch 45°** (có depth). D455 không dùng trong fusion.
+Hai cấu hình đang dùng:
+
+| Config | Camera | Dùng cho |
+| --- | --- | --- |
+| `config/fusion_2cam.yaml` | **webcam laptop trực diện** (camera 0, khung tham chiếu, không depth) + **D435i lệch 45°** | 1 tay (phải) |
+| `config/fusion_3cam_rs.yaml` | **webcam laptop ở giữa** + **D455 lệch 45° phía tay phải** + **D435i lệch 45° phía tay trái** | 2 tay, máy RTX 3050 |
+
+Lệnh chạy 3 camera: mục [Fusion 3 camera](#fusion-3-camera-webcam--d455--d435i). Các bước dưới đây viết cho 2 camera.
 
 Chạy `--source multi`: mỗi camera chạy MediaPipe Pose + Hand riêng, rồi các điểm vai, khuỷu, cổ tay và 21 điểm bàn tay
 được **triangulate** trong một khung chung (khung camera đầu tiên). Depth của RealSense là bằng chứng phụ để phân xử
@@ -105,6 +111,94 @@ python scripts/shadow.py --source multi --robot openarm --arms right \
 #    Đo trước/sau: thêm --record run.npz rồi
 python scripts/measure_lag.py run.npz
 ```
+
+## Fusion 3 camera (webcam + D455 + D435i)
+
+Config `config/fusion_3cam_rs.yaml`, file hiệu chuẩn riêng `config/cameras_calib_3cam_rs.yaml`. Mỗi tay luôn có
+camera trực diện + camera lệch cùng phía nhìn rõ. Cả 3 camera trễ thấp như nhau nên `sync: latest` (không chờ).
+
+| Camera | `name` | Nguồn | Vị trí |
+| --- | --- | --- | --- |
+| 0 (khung tham chiếu) | `front` | webcam laptop, `source: 0`, 1280x720 MJPG 30 fps | giữa, cao ngang ngực, cách người 1,2-1,5 m, thấy trọn đầu-vai-hông-tay |
+| 1 | `right45` | D455, serial `341522301338` | lệch ~45° về phía tay **phải** người điều khiển |
+| 2 | `left45` | D435i, serial `243122071323` | lệch ~45° về phía tay **trái** |
+
+Mỗi RealSense một cổng USB 3 riêng (hoặc hub USB 3 có nguồn), không chung cổng với bộ CAN. Xê dịch bất kỳ camera nào
+(kể cả gập màn hình laptop) sau khi hiệu chuẩn -> hiệu chuẩn lại (bước 3).
+
+```bash
+cd ~/VR/openarm_shadow
+source .venv/bin/activate
+
+# 1) Kiểm tra camera: webcam phải là chỉ số 0, hai RealSense đúng serial trong config và đều báo USB 3.x.
+#    Webcam không phải 0 hoặc serial khác: sửa fusion.cameras trong config/fusion_3cam_rs.yaml.
+python scripts/list_cameras.py
+
+# 2) In bảng ChArUco THEO CONFIG 3 CAMERA (ô 40 mm, khác bảng 35 mm của fusion_2cam), in 100%, dán lên tấm cứng.
+#    Đo lại cạnh 1 ô bằng thước; khác 40 mm thì sửa fusion.board.square_m (và marker_m theo tỉ lệ).
+python scripts/make_charuco_board.py --config config/fusion_3cam_rs.yaml -o charuco_3cam_a4.png
+
+# 3) Hiệu chuẩn (1 lần, mỗi khi dời camera). Lần đầu / đổi độ phân giải webcam: thêm --redo-intrinsics
+#    (đo lại nội tham số webcam; RealSense tự đọc nội tham số). Cầm bảng đưa qua lại để cả 3 camera cùng thấy.
+python scripts/calibrate_cameras.py --config config/fusion_3cam_rs.yaml --redo-intrinsics
+python scripts/calibrate_cameras.py --config config/fusion_3cam_rs.yaml            # các lần sau
+
+# 4) (tuỳ chọn) Đo độ trễ từng camera so với webcam -> fusion.cameras[i].latency_s
+python scripts/measure_camera_latency.py --config config/fusion_3cam_rs.yaml
+
+# 5) Mô phỏng hình que (luôn chạy trước robot thật)
+python scripts/shadow.py --source multi --config config/fusion_3cam_rs.yaml                 # 2 tay
+python scripts/shadow.py --source multi --arms right --config config/fusion_3cam_rs.yaml    # chỉ tay phải
+python scripts/shadow.py --source multi --mode mirror --config config/fusion_3cam_rs.yaml   # soi gương
+
+# 6) Mô phỏng MuJoCo OpenArm v1 (config/mujoco_sim.yaml luôn đặt CUỐI)
+python scripts/shadow.py --robot mujoco --source multi \
+    --config config/fusion_3cam_rs.yaml --config config/mujoco_sim.yaml
+
+# 7) Ghi lại và chẩn đoán (thêm --record vào bất kỳ lệnh nào ở trên)
+python scripts/shadow.py --robot mujoco --source multi \
+    --config config/fusion_3cam_rs.yaml --config config/mujoco_sim.yaml --record run3.npz
+python scripts/find_jumps.py run3.npz                 # các lần khớp nhảy lớn + số camera thấy, sai số, depth
+python scripts/measure_lag.py run3.npz                # độ trễ mục tiêu -> lệnh -> góc đo
+python scripts/replay_npz.py run3.npz --robot mujoco --config config/mujoco_sim.yaml   # xem lại trong MuJoCo
+
+# 8) Robot thật, hai tay: DRY-RUN trước (motor tắt, chỉ đọc góc). Thứ tự config: tay phải + kẹp, hai tay, fusion.
+python scripts/shadow.py --source multi --robot openarm --dry-run \
+    --config config/wrist_real_30.yaml --config config/gripper_real.yaml \
+    --config config/both_arms_real.yaml --config config/fusion_3cam_rs.yaml
+
+# 9) Robot thật, hai tay (bỏ --dry-run khi dry-run đã đúng chiều mọi khớp tay trái; làm theo docs/SAFETY.md).
+#    Tay trái lượt đầu: J1-J4 biên độ nhỏ, cổ tay khoá (both_arms_real.yaml). Ổn rồi mới mở cổ tay tay trái:
+#    thêm --config config/both_arms_wrist_real.yaml NGAY SAU both_arms_real.yaml.
+python scripts/shadow.py --source multi --robot openarm \
+    --config config/wrist_real_30.yaml --config config/gripper_real.yaml \
+    --config config/both_arms_real.yaml --config config/fusion_3cam_rs.yaml
+
+# 10) Robot thật chỉ tay phải
+python scripts/shadow.py --source multi --robot openarm --arms right \
+    --config config/wrist_real_30.yaml --config config/gripper_real.yaml --config config/fusion_3cam_rs.yaml
+```
+
+Khi chạy (cửa sổ OpenCV):
+
+1. Đứng giữa, thả tay xuôi, xoè bàn tay, lòng bàn tay nhìn webcam, đứng yên ~1 s: màn hình báo `than: theo do`
+   (đã học tham chiếu thân, xem README) và `Auto calib tay: right:OK left:OK`, rồi `READY`. Ảnh camera vẽ thân đang
+   dùng (xanh ngọc, chữ `THAN`) + cánh tay hợp nhất (tím). Khi tay che thân: `THAN (uoc luong N diem)`, điểm bị che
+   vẽ vòng cam (đang dùng tham chiếu), robot không bị kéo theo điểm sai.
+2. Mô phỏng: giữ READY 3 s là tự bám. Robot thật: bấm `SPACE` để engage.
+3. Phím: `SPACE` engage / nhả · `c` hiệu chuẩn lại bàn tay · `b` học lại khung thân (đổi chỗ đứng / xoay người)
+   · `g` hiệu chuẩn kẹp · `p` về tư thế nghỉ · `q`/`Esc` về nghỉ rồi thoát. `c` và `b` chỉ khi đã nhả robot.
+
+Hiệu năng và lỗi đã gặp (RTX 3050, 7,4 GB RAM):
+
+- MediaPipe chạy GPU (`models.delegate: gpu`). 6 lệnh nhận diện GPU song song từng làm treo (`DỪNG: mất khung
+  camera. không có khung mới trong 10 s`); nay các lệnh GPU chạy nối tiếp (`perception._GPU_LOCK`).
+- Tốc độ đo được: ~15 fps hình que, ~17 fps MuJoCo không cửa sổ 3D, ~11 fps MuJoCo có cửa sổ 3D (cửa sổ dùng chung
+  GPU). Cần nhanh hơn: `robot.mujoco.viewer_fps: 15` hoặc `viewer: false` trong `config/mujoco_sim.yaml`.
+- RAM: 3 camera + MuJoCo + VS Code từng làm máy hết RAM (OOM killer tắt VS Code). Chạy từ terminal ngoài VS Code,
+  đóng bớt ứng dụng, xem RAM bằng `watch -n1 free -h`.
+- Các dòng `Tensors are designed for single writes`, `NORM_RECT without IMAGE_DIMENSIONS` là cảnh báo của MediaPipe,
+  không phải lỗi.
 
 ## Độ trễ và cách đo
 
@@ -232,7 +326,7 @@ Vẫn nên tránh tư thế mép tay chĩa thẳng vào cả hai camera: đặt 
 nhìn được lòng/mu bàn tay. Thấy `ACQUIRE`/`HOLD` lặp lại ở một tư thế = tư thế đó không quan sát được, đừng điều
 khiển cổ tay ở tư thế đó.
 
-Hiệu chuẩn tay tự động (tay thả xuôi, lòng bàn tay vào đùi) vẫn như cũ, tính theo camera đầu tiên.
+Hiệu chuẩn tay tự động (tay thả xuôi, lòng bàn tay nhìn camera) vẫn như cũ, tính theo camera đầu tiên.
 
 ## Cách hợp nhất một điểm (`fuse_point`)
 

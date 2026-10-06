@@ -4,10 +4,12 @@ import types
 
 import numpy as np
 
-from openarm_shadow.geometry import rot, unit
-from openarm_shadow.handfusion import HandShape, PalmModel, assign_hands_to_wrists, hand_forearm_angle
-from openarm_shadow.multiview import HandOrientationTracker, MultiSample, MultiViewPerception
-from openarm_shadow.perception import palm_frame_from_depth
+from openarm_shadow.core.geometry import rot, unit
+from openarm_shadow.vision.handfusion import HandShape, PalmModel, assign_hands_to_wrists, hand_forearm_angle
+from openarm_shadow.camera.multi_source import MultiSample
+from openarm_shadow.fusion.multiview import MultiViewPerception
+from openarm_shadow.fusion.orientation import HandOrientationTracker
+from openarm_shadow.vision.depth import palm_frame_from_depth
 
 from test_multiview import FakeView, SUBJECT, hand_points, human_world, two_cams
 
@@ -145,7 +147,7 @@ def test_forearm_and_hand_share_wrist():
 
 
 def test_end_to_end_switches_to_kabsch_and_orientation_is_right():
-    from openarm_shadow.perception import body_frame
+    from openarm_shadow.vision.body import body_frame
     cams = two_cams()
     W = human_world()
     R_hand = _hand_R()

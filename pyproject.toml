@@ -7,9 +7,12 @@ dependencies = ["mediapipe==0.10.21", "numpy", "pyyaml"]
 
 [project.optional-dependencies]
 realsense = ["pyrealsense2==2.58.1.10581"]
+mujoco = ["mujoco>=3.6"]
 
 [tool.setuptools]
-packages = ["openarm_shadow", "openarm_shadow.robot"]
+packages = ["openarm_shadow", "openarm_shadow.core", "openarm_shadow.camera", "openarm_shadow.vision",
+            "openarm_shadow.fusion", "openarm_shadow.mapping", "openarm_shadow.filtering", "openarm_shadow.safety",
+            "openarm_shadow.control", "openarm_shadow.display", "openarm_shadow.robot"]
 
 [tool.setuptools.package-data]
 openarm_shadow = ["data/*.json"]

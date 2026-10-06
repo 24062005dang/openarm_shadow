@@ -2,9 +2,9 @@
 import numpy as np
 
 from openarm_shadow.config import load_config
-from openarm_shadow.perception import ArmObs, Frame
-from openarm_shadow.pipeline import ShadowPipeline
-from openarm_shadow.viz import draw_robot
+from openarm_shadow.core.types import ArmObs, Frame
+from openarm_shadow.mapping.pipeline import ShadowPipeline
+from openarm_shadow.display.viz import draw_robot
 
 
 def fake_frame(pipe, q_true, t, noise=0.0, open_fingers=4, rng=np.random.default_rng(0)):
@@ -74,7 +74,9 @@ def test_auto_calibrates_stable_neutral_hand():
     assert not pipe.calib_ready_now["right"]
 
 
-def test_auto_calibration_accepts_visible_arm_pose_and_zeros_wrist_reference():
+def test_auto_calibration_accepts_visible_arm_pose_and_maps_it_to_calib_wrist():
+    """Tư thế hiệu chuẩn (lòng bàn tay nhìn camera) <-> J5-J7 = Arm.calib_wrist (J5 ±90°), không phải 0: kẹp đóng / mở
+    theo pháp tuyến lòng bàn tay (tests/test_gripper_axis.py)."""
     cfg = load_config()
     cfg["mapping"]["robot_arms"] = ["right"]
     cfg["calibration"]["hand_auto"]["hold_s"] = 0.2
@@ -92,7 +94,7 @@ def test_auto_calibration_accepts_visible_arm_pose_and_zeros_wrist_reference():
         fr = fake_frame(pipe, q, 1.0 + i / 30)
         fr.arms["right"].H = fixed_H
         out = pipe.step(fr)
-    assert np.max(np.abs(np.rad2deg(out["right"][4:7]))) < 2.0
+    assert np.max(np.abs(np.rad2deg(out["right"][4:7] - pipe.arms["right"].calib_wrist))) < 2.0
 
 
 def test_auto_calibration_waits_for_open_hand():
@@ -123,8 +125,8 @@ def test_default_hand_neutral_matches_relaxed_hand_each_side():
     (trước đây tay phải lệch 180°: J5 chạy tới giới hạn)."""
     import numpy as np
     from openarm_shadow.config import load_config
-    from openarm_shadow.perception import palm_frame_from_depth
-    from openarm_shadow.pipeline import ShadowPipeline
+    from openarm_shadow.vision.depth import palm_frame_from_depth
+    from openarm_shadow.mapping.pipeline import ShadowPipeline
     from test_multiview import hand_points
 
     cfg = load_config()

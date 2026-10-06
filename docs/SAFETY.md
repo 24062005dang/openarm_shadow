@@ -81,7 +81,9 @@ Offset phần mềm tay phải (01/10, `read_joints.py` ở tư thế nghỉ): J
 - Bù trọng lực tắt mặc định. Không bù, với kp = 70 tay giơ ngang có thể võng khoảng 8° (ước tính từ mô men
   trọng lực ~10 Nm ở vai theo URDF). Bật `robot.gravity_comp` (cần `pip install pin` và đường dẫn URDF) sau khi thử từng khớp.
 - Kẹp tắt mặc định: gripper 1.0 có thể đang ở chế độ POS_FORCE, và chiều mở/đóng chưa đo.
-- Chống va chạm chỉ kiểm tra tay–tay, chưa kiểm tra tay–thân/cột và tay–bàn.
+- Chống va chạm tay–tay **TẮT mặc định** (`safety.self_collision.enabled: false`) để chuyền vật giữa hai tay: không còn
+  gì ngăn hai tay robot đâm vào nhau, người điều khiển tự tránh, E-stop luôn trong tay. Bật lại (`true`) khi không cần
+  chuyền vật; khi bật, hai bàn tay luôn cách nhau ≥ ~13 cm. Chưa kiểm tra tay–thân/cột và tay–bàn.
 - Số đọc rác từ `openarm_can` (phản hồi 0x55 bị đọc thành góc, đã gặp ở taichi_player) được lọc: bỏ số đọc
   |q| > 3,7 rad hoặc nhảy > 0,35 rad, cần 2 lần đọc khớp nhau trước khi bật motor, hỏng liên tục > 0,2 s thì dừng.
   Khi kết thúc, chương trình in số lần đã bỏ số đọc rác; nếu con số này lớn, báo lại nhóm.

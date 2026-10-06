@@ -8,6 +8,7 @@ ShadowPipeline (retarget + lọc) -> SafetyGate -> SimRobot, rồi vẽ hình qu
     python scripts/demo_sim.py                    # mở cửa sổ, q/Esc để thoát
     python scripts/demo_sim.py --out demo.mp4     # không mở cửa sổ, ghi ra video
     python scripts/demo_sim.py --mode mirror
+    python scripts/demo_sim.py --robot mujoco --config config/mujoco_sim.yaml   # robot 3D MuJoCo thay hình que
 
 Hình: nét mảnh xám = mục tiêu sau retarget + lọc; nét đậm = lệnh sau SafetyGate (thứ gửi xuống robot).
 """
@@ -20,12 +21,13 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from openarm_shadow.mapping.arm import MIRROR_SIGNS
 from openarm_shadow.config import load_config
-from openarm_shadow.perception import ArmObs, Frame
-from openarm_shadow.pipeline import ShadowPipeline
+from openarm_shadow.core.types import ArmObs, Frame
+from openarm_shadow.mapping.pipeline import ShadowPipeline
 from openarm_shadow.robot import make_robot
-from openarm_shadow.safety import SafetyGate
-from openarm_shadow.viz import draw_robot, put_lines
+from openarm_shadow.safety.gate import SafetyGate
+from openarm_shadow.display.viz import draw_robot, put_lines
 
 D = np.deg2rad
 # (thời điểm s, động tác đang làm để tới tư thế này, tư thế tay phải J1..J7 độ; None = tay bị che).
@@ -44,7 +46,7 @@ KEYS = [
     (18.5, "tay tha xuoi", [0, 0, 0, 0, 0, 0, 0]),
     (19.5, "tay tha xuoi", [0, 0, 0, 0, 0, 0, 0]),
 ]
-MIRROR = np.array([-1, -1, -1, 1, -1, -1, -1])
+MIRROR = MIRROR_SIGNS          # openarm_shadow/arm.py: đảo dấu J1,J2,J3,J5,J6,J7 (tay trái = ảnh gương tay phải)
 
 
 def human_pose(t):
@@ -80,7 +82,9 @@ def fake_frame(pipe, q_true, t, rng, noise=0.004):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", default=None)
+    ap.add_argument("--config", action="append", default=None)
+    ap.add_argument("--robot", choices=["sim", "mujoco"], default="sim",
+                    help="mujoco: thêm cửa sổ MuJoCo; nét xanh lá trên hình que = góc thật trong mô phỏng")
     ap.add_argument("--mode", choices=["direct", "mirror"], default=None)
     ap.add_argument("--fps", type=float, default=30.0, help="tốc độ khung 'camera' giả lập")
     ap.add_argument("--out", default=None, help="ghi video .mp4 thay vì mở cửa sổ")
@@ -90,7 +94,7 @@ def main():
     if args.mode:
         cfg["mapping"]["mode"] = args.mode
     pipe = ShadowPipeline(cfg)
-    robot = make_robot("sim", cfg, pipe.robot_sides)
+    robot = make_robot(args.robot, cfg, pipe.robot_sides)
     q_meas = robot.connect()
     gate = SafetyGate(pipe.kins, cfg["safety"])
     gate.reset(q_meas)
@@ -121,7 +125,8 @@ def main():
         statuses[gate.status.split(" (")[0].split(" ")[0]] = statuses.get(gate.status.split(" (")[0].split(" ")[0], 0) + 1
         if "va chạm" in gate.status:
             blocked += 1
-        img = draw_robot(pipe.kins, robot.read(), size=(640, 640), q_target=targets,
+        img = draw_robot(pipe.kins, gate.cmd, size=(640, 640), q_target=targets,
+                         q_meas=robot.read() if args.robot == "mujoco" else None,
                          title=f"t = {t:4.1f} s | {name}")
         put_lines(img, [f"SafetyGate: {gate.status}"], org=(10, 46), color=(30, 30, 200))
         if writer is not None:
@@ -135,6 +140,7 @@ def main():
         writer.release()
         print("Đã ghi", args.out)
     cv2.destroyAllWindows()
+    robot.close()
     print("Sai lệch lớn nhất J1–J4 giữa mục tiêu và tư thế người (lúc follow, độ):",
           {s: round(v, 1) for s, v in worst.items()})
     print(f"Số khung SafetyGate chặn vì hai tay sắp va nhau: {blocked}")
