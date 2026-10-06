@@ -12,7 +12,8 @@ Hiệu chuẩn camera: cameras_calib.yaml trong thư mục ghi. Hướng tay t�
 lòng bàn tay nhìn camera); xong cả hai tay thì coi như đã engage và không hiệu chuẩn lại.
 
 File .npz: t, và cho mỗi tay robot: target_*, conf_*, held_*, fus_* (như --record), obs_* (vai, khuỷu, cổ tay
-khung thân, 9 số), H_* (hướng bàn tay 9 số), grip_* (tỉ số ngón cái-trỏ), calib_* (đã hiệu chuẩn hướng tay).
+khung thân, 9 số), H_* (hướng bàn tay 9 số), grip_* (tỉ số ngón cái-trỏ), calib_* (đã hiệu chuẩn hướng tay),
+body_est (orientation.body_ref bật: số điểm vai/hông đang dùng thân chuẩn vì bị che; NaN khi chưa học xong).
 """
 import argparse
 import os
@@ -105,9 +106,12 @@ def main():
             fr = perc.process(sample)
             if not engaged:
                 pipe.auto_calibrate_hand_neutral(fr)
-                engaged = all(pipe.hand_calibrated[s] for s in sides)
+                engaged = perc.body_ready() and all(pipe.hand_calibrated[s] for s in sides)
             targets = pipe.step(fr)
             log["t"].append(fr.t)
+            if perc.body_ref.enabled:            # orientation.body_ref: số điểm vai/hông đang ước lượng (bị che)
+                log.setdefault("body_est", []).append(sum(w < 0.5 for w in perc.body_ref.weights.values())
+                                                      if perc.body_ref.ready else np.nan)
             for s in sides:
                 ob = pipe._obs_for_robot(fr, s)
                 log[f"target_{s}"].append(targets[s])
