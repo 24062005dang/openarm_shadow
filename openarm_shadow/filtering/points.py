@@ -2,7 +2,8 @@
 
 - EMA điểm mốc (Hand Shadowing, arXiv 2603.11383, a = 0.8).
 - ArmShape: đoạn tay dài/ngắn bất thường so với độ dài đã học -> không tin đoạn đó.
-- PointKalman (tuỳ chọn): Kalman vận tốc không đổi, nhiễu đo theo độ tin cậy.
+- PointKalman (tuỳ chọn): Kalman vận tốc không đổi, nhiễu đo theo độ tin cậy riêng từng điểm, loại điểm lệch xa
+  dự đoán (innovation gating; ý tưởng và cài đặt từ nhánh phongnv, commit 2653374).
 """
 from __future__ import annotations
 
@@ -71,22 +72,42 @@ class PointKalman:
 
     q: độ lệch chuẩn gia tốc (m/s^2) - lớn = bám nhanh, ít mượt. r: nhiễu đo (m) khi độ tin cậy = 1; độ tin cậy thấp
     -> nhiễu đo lớn hơn (r / conf) -> tin dự đoán hơn. Trả vị trí đã lọc (không ngoại suy tới tương lai). Mất điểm
-    lâu hơn max_gap_s -> khởi tạo lại (không đi tiếp theo vận tốc cũ)."""
+    lâu hơn max_gap_s -> khởi tạo lại (không đi tiếp theo vận tốc cũ).
 
-    def __init__(self, q=6.0, r=0.015, max_gap_s=0.3):
+    conf: một số cho mọi điểm, hoặc mảng N phần tử (độ tin cậy riêng từng điểm, vd vai/khuỷu/cổ tay): điểm nhìn kém
+    tin dự đoán, điểm nhìn rõ vẫn bám đo. Hiệp phương sai vì thế tính riêng từng điểm.
+
+    Loại điểm theo sai số dự đoán (innovation gating, gate_sigma > 0): điểm đo cách vị trí dự đoán quá gate_sigma độ
+    lệch chuẩn (và quá gate_min_m) coi là sai (tay khác che, MediaPipe đặt nhầm chỗ mà vẫn báo "thấy rõ") -> bỏ đo,
+    dùng dự đoán (vận tốc giảm một nửa để không trôi). Điểm bị loại liên tục confirm_frames khung thì chấp nhận (chuyển
+    động nhanh thật, không kẹt ở dự đoán). self.rejected: điểm nào bị loại ở lần gọi vừa rồi."""
+
+    def __init__(self, q=6.0, r=0.015, max_gap_s=0.3, gate_sigma=0.0, gate_min_m=0.05, confirm_frames=3):
         self.q, self.r, self.max_gap = float(q), float(r), float(max_gap_s)
+        self.gate_sigma, self.gate_min = float(gate_sigma or 0.0), float(gate_min_m)
+        self.confirm = int(confirm_frames)
         self.reset()
 
     def reset(self):
         self.x = self.v = None
-        self.P = None          # [P_pp, P_pv, P_vv]
+        self.P = None          # [P_pp, P_pv, P_vv], mỗi phần tử dạng (N, 1): riêng từng điểm, chung 3 toạ độ
         self.t = None
+        self.rejected = None
+        self._out_n = None
+
+    def _conf(self, conf, z):
+        """Độ tin cậy -> mảng (N, 1) phát sóng được với z (N, 3)."""
+        c = np.broadcast_to(np.asarray(conf, float), z.shape[:-1])
+        return np.maximum(c, 0.05)[..., None]
 
     def __call__(self, z, t, conf=1.0):
         z = np.asarray(z, float)
         if self.x is None or z.shape != self.x.shape or t - self.t > self.max_gap or t <= self.t:
             self.x, self.v, self.t = z.copy(), np.zeros_like(z), t
-            self.P = [self.r ** 2, 0.0, 1.0]
+            one = np.ones(z.shape[:-1] + (1,))
+            self.P = [self.r ** 2 * one, 0.0 * one, one]
+            self.rejected = np.zeros(z.shape[:-1], bool)
+            self._out_n = np.zeros(z.shape[:-1], int)
             return self.x
         dt = t - self.t
         self.t = t
@@ -97,9 +118,26 @@ class PointKalman:
         pp, pv, vv = (pp + 2 * dt * pv + dt * dt * vv + q2 * dt ** 4 / 4,
                       pv + dt * vv + q2 * dt ** 3 / 2,
                       vv + q2 * dt * dt)
-        R = (self.r / max(float(conf), 0.05)) ** 2
+        R = (self.r / self._conf(conf, z)) ** 2
         k_p, k_v = pp / (pp + R), pv / (pp + R)
         y = z - self.x
+        out = np.zeros(z.shape[:-1], bool)
+        if self.gate_sigma > 0:
+            dist = np.linalg.norm(y, axis=-1)
+            out = dist > np.maximum(self.gate_sigma * np.sqrt((pp + R)[..., 0]), self.gate_min)
+            self._out_n = np.where(out, self._out_n + 1, 0)
+            accept = out & (self._out_n >= self.confirm)
+            if np.any(accept):                   # lệch liên tục: chuyển động thật -> nhận đo, khởi tạo lại điểm đó
+                a = accept[..., None]
+                self.x, self.v = np.where(a, z, self.x), np.where(a, 0.0, self.v)
+                pp, pv, vv = np.where(a, self.r ** 2, pp), np.where(a, 0.0, pv), np.where(a, 1.0, vv)
+                self._out_n = np.where(accept, 0, self._out_n)
+                y = np.where(a, 0.0, y)
+                out = out & ~accept
+            o = out[..., None]
+            k_p, k_v = np.where(o, 0.0, k_p), np.where(o, 0.0, k_v)
+            self.v = np.where(o, 0.5 * self.v, self.v)
+        self.rejected = out
         self.x = self.x + k_p * y
         self.v = self.v + k_v * y
         self.P = [(1 - k_p) * pp, (1 - k_p) * pv, vv - k_v * pv]

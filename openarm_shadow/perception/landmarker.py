@@ -17,7 +17,7 @@ import cv2
 import numpy as np
 
 from ..core.rotations import rotation_distance, slerp_rotation
-from .body import body_frame
+from .body import BodyRef, body_frame
 from .depth import deproject_pixel, fit_palm_plane, fuse_hand_landmarks, project_point, sample_depth
 from .hand_assign import assign_hands_to_wrists
 from .hand_geometry import open_finger_count, palm_frame_from_depth
@@ -100,6 +100,22 @@ class Perception:
         self._orientation_good = {"right": 0, "left": 0}
         self._orientation_bad = {"right": 0, "left": 0}
         self._body_R = None
+        # Tham chiếu thân (orientation.body_ref, perception.body.BodyRef): 1 camera chỉ lọc HƯỚNG khung thân
+        self.body_ref = BodyRef(self.orientation_cfg.get("body_ref"))
+
+    def relearn_body(self):
+        """Phím b: học lại tham chiếu thân (vd đổi chỗ đứng / xoay người)."""
+        if getattr(self, "body_ref", None) is not None:
+            self.body_ref.reset()
+
+    def body_status(self):
+        ref = getattr(self, "body_ref", None)
+        return ref.status() if ref is not None else ""
+
+    def body_ready(self):
+        """Dùng được để engage: đã học tham chiếu thân, hoặc body_ref tắt."""
+        ref = getattr(self, "body_ref", None)
+        return ref is None or not ref.enabled or ref.ready
 
     def close(self):
         if getattr(self, "_hand_pool", None) is not None:
@@ -225,6 +241,8 @@ class Perception:
         arms = {"right": ArmObs(), "left": ArmObs()}
         if pose is None:
             self._body_R = None                     # người ra khỏi khung: lần sau nhận khung thân mới
+            if getattr(self, "body_ref", None) is not None:
+                self.body_ref.lost(t)
             for side in arms:
                 self._stabilize_orientation(side, None, "NONE")
             return Frame(arms, None, [], None, t)
@@ -294,6 +312,14 @@ class Perception:
             # Nhảy lớn: giữ khung cũ; lặp lại 10 khung liền (người quay thật / lần đầu nhận sai) thì nhận khung mới
             self._body_reject = getattr(self, "_body_reject", 0) + 1
         active_R = self._body_R
+        ref = getattr(self, "body_ref", None)
+        if ref is not None and ref.enabled:
+            # Chỉ lọc HƯỚNG: điểm lúc dùng depth (camera) lúc dùng MediaPipe world (gốc ở hông), gốc không chung hệ.
+            # Retarget chỉ dùng hướng các đoạn tay nên gốc theo từng khung không ảnh hưởng.
+            if ref.ready:
+                active_R = ref.gate_rotation(body_candidate, t)
+            elif ref.learn(body_candidate, None, ref.visible(vis), t):
+                active_R = ref.R
         active_origin = origin_depth if origin_depth is not None else origin
         depth_used, hand_depth = {}, {}
         for side, (i_s, i_e, i_w) in ARM_IDX.items():
@@ -309,6 +335,8 @@ class Perception:
                 depth_used[side] = 0
             ob.conf["upper"] = float(min(vis[i_s], vis[i_e]))
             ob.conf["fore"] = float(min(vis[i_e], vis[i_w]))
+            # độ tin cậy riêng vai/khuỷu/cổ tay: Kalman điểm (pipeline, per_point_conf) tin dự đoán ở điểm nhìn kém
+            ob.conf["points"] = (float(vis[i_s]), float(vis[i_e]), float(vis[i_w]))
             if side in hand_of:
                 hi = hand_of[side]
                 hw = np.array([[p.x, p.y, p.z] for p in hres.hand_world_landmarks[hi]])

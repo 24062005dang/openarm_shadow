@@ -1,0 +1,13 @@
+# Bật Kalman điểm có loại điểm sai (filter.landmark_kalman). Thêm --config config/kalman_gate.yaml vào CUỐI lệnh chạy;
+# bỏ đi là chạy như cũ.
+# - per_point_conf: độ tin cậy riêng vai / khuỷu / cổ tay (cổ tay nhìn kém thì tin dự đoán, vai/khuỷu vẫn bám đo);
+# - gate_sigma: điểm đo cách vị trí dự đoán > 4 độ lệch chuẩn (và > 5 cm) coi là sai (bị che, đặt nhầm) -> dùng dự
+#   đoán; lệch liên tục 3 khung thì nhận (chuyển động nhanh thật);
+# - bone_length_fix: khuỷu / cổ tay bị loại thì đặt lại đúng độ dài xương đã học. Cần filter.arm_shape.enabled
+#   (đã bật trong config 3 camera, vd local_3cam.yaml; 1 camera nên để tắt).
+filter:
+  landmark_kalman:
+    enabled: true
+    gate_sigma: 4.0
+    per_point_conf: true
+    bone_length_fix: true

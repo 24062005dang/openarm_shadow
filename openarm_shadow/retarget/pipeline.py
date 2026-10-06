@@ -38,8 +38,15 @@ class ShadowPipeline:
         self.lm_ema = {s: EMA(fc["landmark_ema_alpha"]) for s in self.robot_sides}
         # Kalman điểm 3D thay EMA (tuỳ chọn), lọc khung xương cánh tay (tuỳ chọn; cần điểm thang mét nhất quán)
         kc = dict(fc.get("landmark_kalman") or {})
-        self.lm_kf = ({s: PointKalman(kc.get("q", 6.0), kc.get("r", 0.015), kc.get("max_gap_s", 0.3))
+        # gate_sigma > 0: loại điểm lệch xa dự đoán; per_point_conf: độ tin cậy riêng vai/khuỷu/cổ tay (conf["points"]);
+        # bone_length_fix: khuỷu / cổ tay bị loại thì đặt lại đúng độ dài xương đã học (cần arm_shape).
+        self.lm_kf = ({s: PointKalman(kc.get("q", 6.0), kc.get("r", 0.015), kc.get("max_gap_s", 0.3),
+                                      kc.get("gate_sigma", 0.0), kc.get("gate_min_m", 0.05),
+                                      kc.get("confirm_frames", 3))
                        for s in self.robot_sides} if kc.get("enabled", False) else None)
+        self.per_point_conf = bool(kc.get("per_point_conf", False))
+        self.bone_fix = bool(kc.get("bone_length_fix", True))
+        self.kf_rejected = {s: np.zeros(3, bool) for s in self.robot_sides}   # vai/khuỷu/cổ tay bị loại khung vừa rồi
         ac = dict(fc.get("arm_shape") or {})
         self.arm_shape = ({s: ArmShape(ac.get("tol", 0.25), ac.get("samples", 90), ac.get("min_samples", 15),
                                        ac.get("reset_s", 2.0), ac.get("len_range_m", (0.12, 0.5)))
@@ -89,6 +96,27 @@ class ShadowPipeline:
                    hand_axes_px=ob.hand_axes_px, hand_open_fingers=ob.hand_open_fingers,
                    hand_orientation_mode=ob.hand_orientation_mode)
         return m
+
+    def _fix_bone_length(self, side, pts):
+        """Khuỷu / cổ tay bị Kalman loại (đang dùng dự đoán): đặt lại đúng độ dài cánh tay trên / cẳng tay đã học
+        (ArmShape), giữ hướng của dự đoán. Dự đoán thuần có thể co / giãn đoạn tay khi điểm bị khuất vài khung."""
+        ref = self.arm_shape[side].ref()
+        s_, e_, w_ = (np.asarray(p, float).copy() for p in pts)
+        rej = self.kf_rejected[side]
+        if np.isfinite(ref[0]) and rej[1] and np.linalg.norm(e_ - s_) > 1e-6:
+            e_ = s_ + ref[0] * unit(e_ - s_)                         # cổ tay đo tốt thì giữ nguyên cổ tay
+        if np.isfinite(ref[1]) and rej[2] and np.linalg.norm(w_ - e_) > 1e-6:
+            w_ = e_ + ref[1] * unit(w_ - e_)
+        return np.stack([s_, e_, w_])
+
+    @staticmethod
+    def _point_conf(ob, c_up, c_fo):
+        """Độ tin cậy riêng vai, khuỷu, cổ tay cho Kalman điểm (filter.landmark_kalman.per_point_conf). Không có
+        conf["points"] (dữ liệu giả lập, file cũ): vai/khuỷu theo cánh tay trên, cổ tay theo cẳng tay."""
+        pc = ob.conf.get("points")
+        if pc is None:
+            pc = (c_up, c_up, c_fo)
+        return np.clip(np.asarray(pc, float), 0.0, 1.0)
 
     def _neutral_reference(self, side, ob):
         """Giữ J1–J4 theo tư thế tay hiện tại, đặt J5–J7=0 để calib ở vị trí dễ thấy camera."""
@@ -225,7 +253,13 @@ class ShadowPipeline:
             if ob.s is not None and ok_up:
                 raw_pts = np.stack([ob.s, ob.e, ob.w])
                 if self.lm_kf is not None:
-                    pts = self.lm_kf[s](raw_pts, frame.t, min(c_up, c_fo) if ok_fo else c_up)
+                    kconf = (self._point_conf(ob, c_up, c_fo) if self.per_point_conf
+                             else (min(c_up, c_fo) if ok_fo else c_up))
+                    pts = self.lm_kf[s](raw_pts, frame.t, kconf)
+                    rej = self.lm_kf[s].rejected
+                    self.kf_rejected[s] = np.zeros(3, bool) if rej is None else np.asarray(rej, bool).copy()
+                    if self.bone_fix and self.arm_shape is not None and self.kf_rejected[s][1:].any():
+                        pts = self._fix_bone_length(s, pts)
                 else:
                     pts = self.lm_ema[s](raw_pts)
                 s_, e_, w_ = pts

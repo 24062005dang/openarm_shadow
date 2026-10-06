@@ -1,0 +1,10 @@
+# Bật tham chiếu thân (orientation.body_ref, perception.body.BodyRef). Thêm --config config/body_ref.yaml vào CUỐI lệnh
+# chạy; bỏ đi là chạy như cũ. Dùng được với 3 camera (triangulate: lọc từng điểm vai / hông) và 1 camera (chỉ lọc
+# hướng khung thân).
+#
+# Cách dùng: đứng thẳng, thả tay xuôi, cho camera thấy rõ 2 vai ~1 s để học thân chuẩn (dòng "than: ..." trên màn
+# hình). Chưa học xong thì chưa READY / chưa engage. Đổi chỗ đứng: nhả (SPACE) rồi bấm b để học lại.
+# Trên ảnh (3 camera): thân xanh ngọc = thân robot đang dùng; vòng cam = điểm đang ước lượng vì bị che.
+orientation:
+  body_ref:
+    enabled: true

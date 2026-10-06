@@ -1,7 +1,7 @@
 """Nhận diện người trên MỘT camera: MediaPipe Pose + Hand (landmarker), khoá người điều khiển (operator), gán bàn
 tay theo cổ tay (hand_assign), depth RealSense tại điểm mốc (depth), hình học bàn tay (hand_geometry), khung thân
 (body). Kiểu dữ liệu đầu ra dùng chung mọi khâu: types.ArmObs, types.Frame."""
-from .body import body_frame
+from .body import BodyRef, body_frame
 from .depth import (deproject_pixel, fit_metric_depth, fit_palm_plane, fuse_hand_landmarks, project_point,
                     sample_depth, sample_depth_with_confidence)
 from .hand_assign import assign_hands_to_wrists

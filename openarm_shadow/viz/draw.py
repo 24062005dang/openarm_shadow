@@ -20,17 +20,34 @@ def ascii_text(s: str) -> str:
     return s.encode("ascii", "replace").decode()
 
 
-def draw_human(img, frame):
+TORSO_EDGES = {(11, 12), (11, 23), (12, 24), (23, 24)}
+
+
+def pixel(p, img, margin=2.0):
+    """Điểm ảnh (x, y) -> tuple int cho cv2, hoặc None nếu không hữu hạn / quá xa ngoài ảnh (tránh tràn số)."""
+    h, w = img.shape[:2]
+    if p is None or not np.all(np.isfinite(p)) or abs(p[0]) > margin * w or abs(p[1]) > margin * h:
+        return None
+    return int(p[0]), int(p[1])
+
+
+def draw_human(img, frame, skip=(), torso_estimated=False):
+    """skip: chỉ số điểm Pose KHÔNG vẽ (cùng các đoạn nối tới nó), vd vai/hông khi thân được vẽ riêng (fusion).
+    torso_estimated: 1 camera đang dùng hướng thân tham chiếu (tay che thân, orientation.body_ref) -> vẽ thân thô màu
+    cam, để biết khung thân trên ảnh lúc đó KHÔNG được dùng."""
     h, w = img.shape[:2]
     th = max(2, w // 250)           # nét dày theo kích thước ảnh (1280 px -> 5 px)
     if frame.pose_2d is not None:
         P = frame.pose_2d
         for a, b in POSE_EDGES:
+            if a in skip or b in skip:
+                continue
             if min(P[a, 2], P[b, 2]) > 0.3:
+                col = (0, 140, 255) if torso_estimated and (a, b) in TORSO_EDGES else (0, 220, 0)
                 cv2.line(img, (int(P[a, 0] * w), int(P[a, 1] * h)), (int(P[b, 0] * w), int(P[b, 1] * h)),
-                         (0, 220, 0), th)
+                         col, th)
         for i in (11, 12, 13, 14, 15, 16):
-            if P[i, 2] > 0.3:
+            if i not in skip and P[i, 2] > 0.3:
                 cv2.circle(img, (int(P[i, 0] * w), int(P[i, 1] * h)), th + 3, (0, 255, 255), -1)
     for h2, side in frame.hands_2d:
         c = COL.get(side, (160, 160, 160))
