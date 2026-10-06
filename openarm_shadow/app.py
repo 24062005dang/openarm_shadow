@@ -195,6 +195,14 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                     log[f"cmd_{s}"].append(cmd[s])
                     log[f"conf_{s}"].append(pipe.conf[s])
                     log[f"fus_{s}"].append(fusion_row(fr, pipe.human_side_for(s)))
+                    log[f"raw_{s}"].append(pipe.raw_targets[s])
+                    log[f"held_{s}"].append(pipe.held[s].copy())
+                    # chẩn đoán kẹp: [r fusion, r nhỏ nhất các camera, số camera thấy bàn tay, đang chờ nhả]
+                    ob = fr.arms.get(pipe.human_side_for(s))
+                    rv = [x for x in (getattr(ob, "grip_views", None) or []) if np.isfinite(x)]
+                    log[f"grip_obs_{s}"].append([np.nan if ob is None or ob.grip is None else ob.grip,
+                                                 min(rv) if rv else np.nan, len(rv),
+                                                 float(pipe.grip[s].releasing)])
             now = time.monotonic()
             fps = 0.9 * fps + 0.1 / max(now - fps_t, 1e-3)
             fps_t = now
@@ -204,14 +212,6 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                 else:
                     ref = getattr(perc, "body_ref", None)
                     est = bool(ref is not None and ref.ready and ref.weights.get("R", 1.0) < 0.5)
-                    log[f"raw_{s}"].append(pipe.raw_targets[s])
-                    log[f"held_{s}"].append(pipe.held[s].copy())
-                    # chẩn đoán kẹp: [r fusion, r nhỏ nhất các camera, số camera thấy bàn tay, đang chờ nhả]
-                    ob = fr.arms.get(pipe.human_side_for(s))
-                    rv = [x for x in (getattr(ob, "grip_views", None) or []) if np.isfinite(x)]
-                    log[f"grip_obs_{s}"].append([np.nan if ob is None or ob.grip is None else ob.grip,
-                                                 min(rv) if rv else np.nan, len(rv),
-                                                 float(pipe.grip[s].releasing)])
                     cam = draw_human(frame_bgr.copy(), fr, torso_estimated=est)
                     if cfg["camera"]["mirror_display"]:
                         cam = cv2.flip(cam, 1)
