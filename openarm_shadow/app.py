@@ -111,7 +111,8 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
         ctl.trace = trace
         ctl.start()
         rest = np.deg2rad(np.asarray(cfg["robot"]["rest_pose_deg"], float))
-        log = {"t": [], **{f"{k}_{s}": [] for k in ("target", "cmd", "conf", "fus") for s in pipe.robot_sides}}
+        log = {"t": [], **{f"{k}_{s}": [] for k in ("target", "cmd", "conf", "fus", "raw", "held", "grip_obs")
+                           for s in pipe.robot_sides}}
         fps_t, fps = time.monotonic(), 0.0
         auto_engage_s = float(cfg.get("calibration", {}).get("hand_auto", {}).get("auto_engage_sim_s", 3.0))
         ready_since = None
@@ -194,6 +195,14 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                 else:
                     ref = getattr(perc, "body_ref", None)
                     est = bool(ref is not None and ref.ready and ref.weights.get("R", 1.0) < 0.5)
+                    log[f"raw_{s}"].append(pipe.raw_targets[s])
+                    log[f"held_{s}"].append(pipe.held[s].copy())
+                    # chẩn đoán kẹp: [r fusion, r nhỏ nhất các camera, số camera thấy bàn tay, đang chờ nhả]
+                    ob = fr.arms.get(pipe.human_side_for(s))
+                    rv = [x for x in (getattr(ob, "grip_views", None) or []) if np.isfinite(x)]
+                    log[f"grip_obs_{s}"].append([np.nan if ob is None or ob.grip is None else ob.grip,
+                                                 min(rv) if rv else np.nan, len(rv),
+                                                 float(pipe.grip[s].releasing)])
                     cam = draw_human(frame_bgr.copy(), fr, torso_estimated=est)
                     if cfg["camera"]["mirror_display"]:
                         cam = cv2.flip(cam, 1)

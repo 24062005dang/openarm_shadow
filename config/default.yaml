@@ -197,6 +197,13 @@ grip:
   level_dwell_s: 0.15      # và giữ chừng này giây
   calib_s: 4.0
 
+  # Chốt khi đang kẹp (độ mở <= 0,3): tay di chuyển làm ảnh nhoè, MediaPipe đặt sai đầu ngón -> đo nhầm "mở" -> rơi vật.
+  # Đóng vẫn nhận ngay. Mở phải giữ liên tục release_confirm_s VÀ cổ tay đã chậm (< release_move_speed_mps) trong
+  # release_confirm_s; mở liên tục quá release_max_s thì nhả dù tay còn đi. release_confirm_s: 0 = tắt (nhả ngay như cũ).
+  release_confirm_s: 0.3
+  release_move_speed_mps: 0.35
+  release_max_s: 1.5
+  release_reacquire_s: 1.0   # mất bàn tay lúc đang kẹp: bắt lại xong phải thấy mở liên tục chừng này mới nhả
 safety:
   max_vel_deg_s: [45, 45, 60, 60, 90, 90, 90]
   grip_vel_per_s: 1.5

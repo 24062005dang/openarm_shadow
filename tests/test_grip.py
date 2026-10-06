@@ -87,3 +87,83 @@ def test_grip_follows_fingers_when_palm_orientation_uncertain():
     fr.arms["right"].grip = 0.9
     g = pipe.step(fr)["right"][7]
     assert np.isclose(g, out["right"][7]) and pipe.held["right"][7]
+
+
+def _r(v):
+    return 0.25 + v * 0.65
+
+
+def test_grip_latch_ignores_brief_false_open():
+    """run5 05/10: đang kẹp, tay di chuyển -> đo nhầm 'mở hẳn' 1-2 khung (0,1-0,25 s) -> kẹp nhả vật."""
+    g = GripMapper(pinch_ratio=0.25, open_ratio=0.9, release_s=0.3)
+    assert np.isclose(g(_r(0.0), 0.0), 0.0)
+    assert np.isclose(g(_r(1.0), 0.1), 0.0) and g.releasing      # 1 khung nhầm: giữ kẹp
+    assert np.isnan(g(None, 0.2))                                # mất tay: NaN, bộ lọc giữ
+    assert np.isclose(g(_r(0.05), 0.3), 0.05) and not g.releasing   # quay về chụm: huỷ chờ
+    for t in (1.0, 1.1, 1.2):                                    # mở 0,2 s: vẫn giữ
+        assert np.isclose(g(_r(1.0), t), 0.05)
+    assert np.isnan(g(None, 1.25)) and g.releasing               # mất tay giữa chừng không xoá đồng hồ
+    assert np.isclose(g(_r(1.0), 1.35), 1.0)                     # mở liên tục >= 0,3 s, tay đứng yên: nhả
+    assert np.isclose(g(_r(0.0), 1.45), 0.0)                     # đóng: nhận ngay
+
+
+def test_grip_latch_off_and_partial_open():
+    g = GripMapper(pinch_ratio=0.25, open_ratio=0.9)             # mặc định lớp: tắt, như cũ
+    assert g(0.25, 0.0) == 0.0 and np.isclose(g(0.9, 0.1), 1.0)
+    g = GripMapper(pinch_ratio=0.25, open_ratio=0.9, release_s=0.3)
+    g(0.25, 0.0)
+    assert np.isclose(g(_r(0.2), 0.1), 0.2)                      # nới nhẹ (< release_delta): nhận ngay
+
+
+def test_grip_holds_while_carrying_object_and_releases_after_stop():
+    """Mang vật: cổ tay đi 0,6 m/s, đo nhầm 'mở' 0,6 s liền (> release_s) -> vẫn kẹp. Dừng tay rồi mở -> nhả."""
+    g = GripMapper(pinch_ratio=0.25, open_ratio=0.9, release_s=0.3, move_speed_mps=0.35, release_max_s=1.5)
+    dt, x = 0.1, 0.0
+    for k in range(10):                                          # đang kẹp, tay đi
+        t = k * dt
+        x += 0.06
+        assert np.isclose(g(_r(0.0), t, wrist=[x, 0, 1]), 0.0)
+    for k in range(10, 16):                                      # nhoè 0,6 s: đo 'mở' khi tay vẫn đi
+        t = k * dt
+        x += 0.06
+        assert np.isclose(g(_r(1.0), t, wrist=[x, 0, 1]), 0.0)
+    for k in range(16, 20):                                      # hết nhoè: chụm lại
+        x += 0.06
+        assert np.isclose(g(_r(0.0), k * dt, wrist=[x, 0, 1]), 0.0)
+    out = [g(_r(0.0), k * dt, wrist=[x, 0, 1]) for k in range(20, 30)]   # dừng tay ở đích
+    out += [g(_r(1.0), k * dt, wrist=[x, 0, 1]) for k in range(30, 36)]  # mở tay thả vật
+    assert np.isclose(out[-1], 1.0)                              # tay đứng yên + mở 0,3 s: nhả
+
+
+def test_grip_releases_eventually_when_opening_while_moving():
+    g = GripMapper(pinch_ratio=0.25, open_ratio=0.9, release_s=0.3, move_speed_mps=0.35, release_max_s=1.5)
+    g(_r(0.0), 0.0, wrist=[0, 0, 1])
+    vals = [g(_r(1.0), k * 0.1, wrist=[0.06 * k, 0, 1]) for k in range(1, 20)]
+    assert np.isclose(vals[12], 0.0) and np.isclose(vals[-1], 1.0)   # 1,3 s: còn kẹp; > 1,5 s: nhả
+
+
+def test_grip_waits_longer_after_hand_reacquired_while_closed():
+    """run6 06/10: đang kẹp, mất bàn tay vài khung, bắt lại MediaPipe đoán 'xoè' ổn định -> trước đây nhả sau 0,3 s."""
+    g = GripMapper(pinch_ratio=0.25, open_ratio=0.9, release_s=0.3, release_reacquire_s=1.0)
+    g(_r(0.0), 0.0)
+    for t in (0.1, 0.2, 0.3):
+        assert np.isnan(g(None, t))                              # mất tay
+    vals = [g(_r(1.0), 0.4 + 0.1 * k) for k in range(12)]        # bắt lại: 'mở' ổn định
+    assert np.allclose(vals[:9], 0.0)                            # < 1 s: còn kẹp
+    assert np.isclose(vals[-1], 1.0)                             # mở liên tục > 1 s: nhả (người thả thật)
+    g(_r(0.0), 2.0)
+    assert not g._lost_latched
+    assert np.isclose(g(_r(1.0), 2.1), 0.0) and np.isclose(g(_r(1.0), 2.45), 1.0)   # không mất tay: 0,3 s như cũ
+
+
+def test_grip_release_needs_all_cameras_to_see_open():
+    """1 camera đặt sai đầu ngón -> 3D 'mở', camera kia vẫn thấy chụm: giữ kẹp. Đóng vẫn theo giá trị fusion."""
+    g = GripMapper(pinch_ratio=0.25, open_ratio=0.9, release_s=0.3)
+    g(_r(0.0), 0.0, r_views=[_r(0.0), _r(0.0)])
+    for k in range(1, 10):
+        assert g(_r(1.0), 0.1 * k, r_views=[_r(1.0), _r(0.05)]) <= 0.1     # vẫn kẹp
+    out = [g(_r(1.0), 1.0 + 0.1 * k, r_views=[_r(1.0), _r(0.95)]) for k in range(5)]
+    assert np.isclose(out[-1], 1.0)                              # mọi camera thấy mở: nhả
+    g2 = GripMapper(pinch_ratio=0.25, open_ratio=0.9, release_s=0.3)
+    g2(_r(1.0), 0.0, r_views=[_r(1.0), _r(1.0)])
+    assert np.isclose(g2(_r(0.5), 0.1, r_views=[_r(0.5), _r(0.0)]), 0.5)   # không kẹp: dùng fusion như cũ

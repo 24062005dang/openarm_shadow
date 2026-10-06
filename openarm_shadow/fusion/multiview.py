@@ -495,6 +495,10 @@ class MultiViewPerception:
         # Kẹp có độ tin cậy riêng (4 điểm nó dùng), KHÔNG theo độ tin cậy hướng lòng bàn tay: khi chụm/xoè, lòng
         # bàn tay đổi dáng/bị che nên hướng tay hay về HOLD/ACQUIRE (tin cậy thấp) đúng lúc kẹp cần chạy.
         grip_ids = [H_WRIST, H_MIDDLE_MCP, H_THUMB_TIP, H_INDEX_TIP]
+        # Tỉ số riêng từng camera (điểm world MediaPipe của camera đó): đang kẹp thì chỉ nhả khi camera thấy "chụm
+        # nhất" cũng báo mở (1 camera đặt sai đầu ngón khi tay di chuyển làm khoảng cách 3D phồng ra).
+        ob.grip_views = [float(self.view_frames[v].arms[side].grip) for v in sorted(seen)
+                         if v < len(self.view_frames) and self.view_frames[v].arms[side].grip is not None]
         if np.all(np.isfinite(pts[grip_ids])):
             ob.grip = float(np.linalg.norm(pts[H_THUMB_TIP] - pts[H_INDEX_TIP]) /
                             max(np.linalg.norm(pts[H_MIDDLE_MCP] - pts[H_WRIST]), 1e-6))

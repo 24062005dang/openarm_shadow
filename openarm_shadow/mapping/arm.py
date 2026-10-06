@@ -98,7 +98,11 @@ class Arm:
                           if ac.get("enabled", False) else None)
         g = cfg["grip"]
         self.grip = GripMapper(g["pinch_ratio"], g["open_ratio"], g.get("levels"), g.get("level_hysteresis", 0.05),
-                               g.get("level_dwell_s", 0.15), g.get("calib_s", 4.0))
+                               g.get("level_dwell_s", 0.15), g.get("calib_s", 4.0),
+                               release_s=g.get("release_confirm_s", 0.3),
+                               move_speed_mps=g.get("release_move_speed_mps", 0.35),
+                               release_max_s=g.get("release_max_s", 1.5),
+                               release_reacquire_s=g.get("release_reacquire_s", 1.0))
 
         # trạng thái theo khung
         self.q_prev = np.zeros(7)

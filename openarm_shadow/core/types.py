@@ -24,6 +24,7 @@ class ArmObs:
     hand_center_cam: np.ndarray | None = None
     hand_axes_px: np.ndarray | None = None  # origin,x,y,z endpoints trong pixel D455 RGB
     hand_open_fingers: int = 0
+    grip_views: list = field(default_factory=list)  # fusion: tỉ số kẹp riêng từng camera thấy bàn tay (chốt nhả kẹp)
     hand_orientation_mode: str = "NONE"
 
     @property

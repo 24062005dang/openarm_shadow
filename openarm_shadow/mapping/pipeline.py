@@ -34,6 +34,7 @@ class ShadowPipeline:
         self.bone_fix = bool(kc.get("bone_length_fix", True))
         self.arm_shape = _SideView(self.arms, "arm_shape") if dict(fc.get("arm_shape") or {}).get("enabled", False) else None
         self.fresh = False       # khung vừa rồi có ít nhất 1 khớp nhận giá trị mới (không phải giữ) -> dead-man
+        self.raw_targets = {s: np.full(8, np.nan) for s in self.robot_sides}   # nghiệm IK + kẹp trước bộ lọc (--record)
         cc = cfg.get("calibration", {}).get("hand_auto", {})
         self.auto_calib_enabled = bool(cc.get("enabled", True))
         self.auto_calib_hold_s = float(cc.get("hold_s", 0.6))
@@ -233,8 +234,11 @@ class ShadowPipeline:
             q, info = self.rt[s].solve(u, l, H, self.q_prev[s])
             self.q_prev[s] = q
             self.last_info[s] = info
-            grip = self.grip[s](ob.grip if c_gr >= fc["min_conf"] else None, frame.t)
+            wrist = pts[2] if (ob.s is not None and ok_up) else ob.w     # tay đang di chuyển: kẹp khó nhả nhầm
+            grip = self.grip[s](ob.grip if c_gr >= fc["min_conf"] else None, frame.t, wrist=wrist,
+                                r_views=getattr(ob, "grip_views", None))
             raw = np.append(q, grip)
+            self.raw_targets[s] = raw.copy()
             conf = np.array([c_up, c_up, c_fo, c_fo, c_ha, c_ha, c_ha, c_gr])
             if u is None:
                 conf[:2] = 0
