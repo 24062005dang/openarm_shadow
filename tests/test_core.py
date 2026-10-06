@@ -197,8 +197,9 @@ def test_wrist_fast_config_tracks_faster():
 
 
 # ---------------- an toàn ----------------
-def make_gate():
+def make_gate(collision=False):
     cfg = load_config()
+    cfg["safety"]["self_collision"]["enabled"] = collision     # mặc định tắt (chuyền vật); test va chạm bật lại
     kins = {s: ArmKinematics(s) for s in ("right", "left")}
     g = SafetyGate(kins, cfg["safety"])
     g.reset({s: np.zeros(8) for s in kins})
@@ -232,7 +233,7 @@ def test_gate_deadman():
 
 
 def test_gate_blocks_arm_collision():
-    g = make_gate()
+    g = make_gate(collision=True)
     g.lo = {s: np.full(7, -np.pi) for s in g.sides}
     g.hi = {s: np.full(7, np.pi) for s in g.sides}
     g.engage(-10)
@@ -249,7 +250,7 @@ def test_gate_blocks_arm_collision():
 
 def test_gate_not_stuck_near_collision():
     """Đang sát ngưỡng va chạm, mục tiêu về tư thế nghỉ: gate phải thoát ra được, không đứng im mãi."""
-    g = make_gate()
+    g = make_gate(collision=True)
     M = np.array([-1, -1, -1, 1, -1, -1, -1, 1])
     near = np.append(np.deg2rad([69, -5, -15, 109, 0, 0, 0]), 0.5)
     g.reset({"right": near, "left": M * near})
@@ -297,3 +298,10 @@ def test_grip_filter_uses_grip_units():
     f(np.array([0.0, 0.0]), np.ones(2), 0.0)
     out, held = f(np.array([0.0, 1.0]), np.ones(2), 0.033)   # kẹp mở hết trong 1 khung: không bị coi là nhảy
     assert not held[1] and out[1] > 0.1
+
+
+def test_self_collision_off_by_default_for_handover():
+    """Mặc định tắt chống va chạm hai tay để chuyền vật: hai bàn tay được tới sát nhau."""
+    assert not load_config()["safety"]["self_collision"]["enabled"]
+    g = make_gate()
+    assert not g.col_on
