@@ -199,8 +199,8 @@ def test_joint_filter_per_joint_jump():
     assert held[0] and not held[1]
 
 
-def test_wrist_real_30_filter_tracks_faster():
-    cfg = load_config(Path(__file__).resolve().parents[1] / "config" / "wrist_real_30.yaml")
+def test_real_filter_tracks_wrist_faster():
+    cfg = load_config(Path(__file__).resolve().parents[1] / "config" / "real.yaml")
     base = load_config()["filter"]
     fast = cfg["filter"]
     mk = lambda fc: JointFilter(8, fc["min_cutoff"], fc["beta"], fc["deadband_deg"], fc["jump_deg"],
@@ -216,7 +216,6 @@ def test_wrist_real_30_filter_tracks_faster():
             out, _ = jf(x, np.ones(8), k / 11)
         lag[name] = 90 - np.rad2deg(out[6])
     assert lag["fast"] < 0.5 * lag["base"]
-    assert cfg["safety"]["max_vel_deg_s"][:4] == [20] * 4 and cfg["safety"]["max_vel_deg_s"][4:] == [30] * 3
 
 
 # ---------------- an toàn ----------------
@@ -359,10 +358,9 @@ def _sine_14hz(cfg_files, dur=4.0):
     return cmd, hold / max(n, 1), g.dq
 
 
-def test_real_tracking_profile_moves_continuously_between_camera_frames():
-    """config/real_tracking.yaml: lệnh chạy đều giữa 2 khung camera 14 Hz và gửi vận tốc feedforward (dq)."""
-    real = ("wrist_real_30.yaml", "both_arms_real.yaml", "fusion_3cam.yaml")
-    _, hold, dq = _sine_14hz(real + ("real_tracking.yaml",))
-    assert hold < 0.1 and dq is not None
+def test_real_profile_moves_continuously_between_camera_frames():
+    """config/real.yaml: lệnh chạy đều giữa 2 khung camera 14 Hz (velocity_tracking, dq = 0: feedforward tắt)."""
+    _, hold, dq = _sine_14hz(("real.yaml", "fusion_3cam.yaml"))
+    assert hold < 0.1 and all(np.allclose(v, 0) for v in dq.values())      # feedforward tắt: motor nhận dq = 0
     _, hold_old, dq_old = _sine_14hz(("default.yaml",))      # kiểu cũ, trần 45-90: chạy vụt rồi đứng chờ khung sau
     assert hold_old > 0.3 and dq_old is None

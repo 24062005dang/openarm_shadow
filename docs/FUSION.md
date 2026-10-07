@@ -129,22 +129,20 @@ python scripts/find_jumps.py run3.npz                 # các lần khớp nhảy
 python scripts/measure_lag.py run3.npz                # độ trễ mục tiêu -> lệnh -> góc đo
 python scripts/replay_npz.py run3.npz --robot mujoco --config config/mujoco_sim.yaml   # xem lại trong MuJoCo
 
-# 8) Robot thật, hai tay: DRY-RUN trước (motor tắt, chỉ đọc góc). Thứ tự config: tay phải (+ kẹp), hai tay, fusion.
+# 8) Robot thật, hai tay: DRY-RUN trước (motor tắt, chỉ đọc góc). config/real.yaml TRƯỚC, fusion SAU.
 python scripts/shadow.py --source multi --robot openarm --dry-run \
-    --config config/wrist_real_30.yaml \
-    --config config/both_arms_real.yaml --config config/fusion_3cam.yaml
+    --config config/real.yaml --config config/fusion_3cam.yaml
 
-# 9) Robot thật, hai tay (bỏ --dry-run khi dry-run đã đúng chiều mọi khớp tay trái; làm theo docs/SAFETY.md).
-#    Tay trái = ảnh gương tay phải (giới hạn, kẹp, J1-J7). Lượt đầu thận trọng: thay wrist_real_30.yaml bằng first_real.yaml.
-#    Tuỳ chọn, thêm CUỐI lệnh: config/real_tracking.yaml (bám liên tục giữa 2 khung camera, trần tốc độ 45-90°/s),
-#    config/auto_engage_real.yaml (tự đồng bộ sau khi READY 5 s).
+# 9) Robot thật, hai tay (bỏ --dry-run khi dry-run đã đúng chiều mọi khớp; làm theo docs/SAFETY.md).
+#    real.yaml: kẹp, bù trọng lực, tốc độ 45-90°/s bám liên tục, J2 tới 170°. Tay trái = ảnh gương tay phải.
+#    Thận trọng: thêm --config config/first_real.yaml ở CUỐI (chỉ J1-J4 nhỏ, 20°/s).
+#    Tuỳ chọn: --config config/auto_engage_real.yaml ở CUỐI (tự đồng bộ sau khi READY 5 s).
 python scripts/shadow.py --source multi --robot openarm \
-    --config config/wrist_real_30.yaml \
-    --config config/both_arms_real.yaml --config config/fusion_3cam.yaml
+    --config config/real.yaml --config config/fusion_3cam.yaml
 
 # 10) Robot thật chỉ tay phải
 python scripts/shadow.py --source multi --robot openarm --arms right \
-    --config config/wrist_real_30.yaml --config config/fusion_3cam.yaml
+    --config config/real.yaml --config config/fusion_3cam.yaml
 ```
 
 Khi chạy (cửa sổ OpenCV):
@@ -175,11 +173,11 @@ Mô phỏng (camera 15 fps, giả định camera + nhận diện 120 ms) cho th�
 | Khâu | Trễ | Đã xử lý |
 | --- | --- | --- |
 | Bộ lọc One Euro J1-J4 (beta 0.02) | 130-200 ms | Tăng `filter.beta` J1-J4 (0.5 -> ~70 ms); Pose nhiễu lớn thì đứng yên rung hơn, hạ về 0.2 nếu cần |
-| Giới hạn tốc độ khi tay nhanh hơn giới hạn | rất lớn (vd 440 ms) | nâng trần trong `config/real_tracking.yaml` (45-90°/s; real1: ở trần 20/30°/s robot đuổi ở trần 51% lúc chạy) |
+| Giới hạn tốc độ khi tay nhanh hơn giới hạn | rất lớn (vd 440 ms) | nâng trần trong `config/real.yaml` (45-90°/s; real1: ở trần 20/30°/s robot đuổi ở trần 51% lúc chạy) |
 | SafetyGate kiểu cũ: lao tới mục tiêu rồi đứng chờ khung sau | ~1/2 khung + giật theo nhịp 15 Hz | `velocity_tracking`: chạy đều theo vận tốc mục tiêu, giới hạn gia tốc |
 | Motor nhận dq = 0: kd hãm chuyển động | kd/kp: ~70 ms cổ tay, ~40 ms J1 | `velocity_tracking.feedforward`: gửi vận tốc lệnh làm dq |
 
-`config/real_tracking.yaml` (robot thật) chỉ bật mục `velocity_tracking`, TẮT feedforward dq (real2 07/10: có dq thì
+`config/real.yaml` (robot thật) chỉ bật mục `velocity_tracking`, TẮT feedforward dq (real2 07/10: có dq thì
 robot rung qua lại nhiều hơn lệnh 2-5 lần). Bật cả hai mục (mô phỏng cổ tay ±40° 0,3 Hz: trễ mục tiêu -> motor 110 -> ~0 ms, sai số
 5,8 -> 1,9°). Mất người/tay thì thôi ngoại suy ngay (không trôi tiếp), đứng yên không rung hơn kiểu cũ.
 `--record run.npz` giờ ghi thêm lệnh và góc đo 100 Hz; `scripts/measure_lag.py run.npz` in trễ mục tiêu -> lệnh,
@@ -288,7 +286,7 @@ hướng sai hoặc lật 180°, các nguồn mâu thuẫn → `HOLD`/`CONFLICT`
 1. `ACQUIRE` (trên): cổ tay không nhận hướng mới cho tới khi hướng ổn định nhiều khung.
 2. SafetyGate `resume_after_s` / `resume_blend_s`: khớp nào đứng yên > 0,3 s rồi chạy lại thì tăng tốc mềm riêng
    khớp đó trong 1 s (J1-J4 không bị ảnh hưởng khi chỉ cổ tay mất).
-3. Robot thật: cổ tay 30°/s (`wrist_real_30.yaml`, trước 90), bước nhảy cổ tay > 60° bị giữ.
+3. Robot thật (`real.yaml`): bước nhảy cổ tay > 60° bị giữ (mô phỏng 90°).
 
 Vẫn nên tránh tư thế mép tay chĩa thẳng vào cả hai camera: đặt camera phụ lệch 45-60° sao cho luôn có một camera
 nhìn được lòng/mu bàn tay. Thấy `ACQUIRE`/`HOLD` lặp lại ở một tư thế = tư thế đó không quan sát được, đừng điều

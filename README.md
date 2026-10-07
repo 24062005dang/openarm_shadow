@@ -44,7 +44,7 @@ lọc số đọc rác.
   động học `core/kinematics.py`; giới hạn J4 của MJCF hẹp hơn URDF (128-131°) nên dùng kèm `config/mujoco_sim.yaml`.
 - Đã chạy với webcam thật trên laptop của nhóm (mô phỏng, 28/09): nhận diện và bám theo tay.
 - Tay phải đã chạy trên OpenArm thật (30/09: J1–J4; 02/10: J1–J7 + kẹp, 2 camera). Tay trái: không phải zero sai mà
-  J1/J2 lệch 180° (docs/SAFETY.md), offset ở `config/both_arms_real.yaml`, CHƯA chạy thật.
+  J1/J2 lệch 180° (docs/SAFETY.md), offset ở `config/real.yaml`, CHƯA chạy thật.
   Vẫn làm theo `docs/SAFETY.md` mỗi buổi (dry-run trước).
 - Quy ước góc URDF ↔ motor: dấu đồng nhất; offset zero đo trên robot nằm trong `urdf_to_motor` của các config
   chạy thật (J4 tay phải trôi giữa các buổi: **đo lại mỗi buổi**).
@@ -104,13 +104,12 @@ python scripts/replay_npz.py demo.npz --robot mujoco --config config/mujoco_sim.
 #   ./tools/bringup/setup_can.sh can0                               # chỉ một cổng
 #   ip -br link | grep can                                          # cả hai phải UP;  candump -n 20 can0  (bật nguồn robot trước)
 python tools/bringup/read_joints.py --iface can0                    # chỉ đọc góc: can0 = tay phải, can1 = tay trái
-python scripts/shadow.py --robot openarm --dry-run                  # motor TẮT: chỉ đọc, kiểm tra chiều khớp
-python scripts/shadow.py --source multi --robot openarm --arms right \
-    --config config/first_real.yaml --config config/fusion_3cam.yaml            # lần đầu: J1–J4, chậm
+python scripts/shadow.py --source multi --robot openarm --dry-run \
+    --config config/real.yaml --config config/fusion_3cam.yaml      # motor TẮT: chỉ đọc, kiểm tra chiều khớp
 python scripts/shadow.py --source multi --robot openarm \
-    --config config/wrist_real_30.yaml --config config/both_arms_real.yaml \
-    --config config/fusion_3cam.yaml                                            # hai tay (sau khi dry-run đúng chiều)
-# tuỳ chọn, thêm CUỐI lệnh: config/real_tracking.yaml (bám liên tục giữa 2 khung camera),
+    --config config/real.yaml --config config/fusion_3cam.yaml      # chạy thật, hai tay (thêm --arms right: một tay)
+# config/real.yaml = cấu hình đã chạy ổn 07/10: hai tay + kẹp, bù trọng lực, tốc độ 45-90°/s bám liên tục, J2 tới 170°.
+# tuỳ chọn, thêm CUỐI lệnh: config/first_real.yaml (thận trọng: chỉ J1–J4 nhỏ, 20°/s),
 #                           config/auto_engage_real.yaml (tự đồng bộ khi READY đủ giây)
 ```
 

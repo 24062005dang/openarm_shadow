@@ -8,7 +8,7 @@
 #   python scripts/list_cameras.py           # chỉ số webcam + serial 2 RealSense; cả 2 phải báo USB 3.x
 #   python scripts/calibrate_cameras.py --config config/fusion_3cam.yaml --redo-intrinsics
 #   python scripts/shadow.py --source multi --config config/fusion_3cam.yaml          # mô phỏng 2 tay
-#   robot thật: config robot TRƯỚC file này (xem config/both_arms_real.yaml), dry-run trước.
+#   robot thật: config/real.yaml TRƯỚC file này, dry-run trước.
 #
 # Xê dịch bất kỳ camera nào (kể cả gập màn hình laptop) sau khi hiệu chuẩn -> chạy lại calibrate_cameras.py.
 # 2 RealSense: mỗi cái một cổng USB 3 riêng (hoặc hub USB 3 có nguồn riêng), không chung cổng với bộ CAN.

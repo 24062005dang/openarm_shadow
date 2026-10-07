@@ -195,6 +195,9 @@ class OpenArmCANRobot:
         if gc.get("enabled"):
             from .gravity import GravityModel
             self.gravity = GravityModel(gc["urdf"], self.sides)
+        self.gravity_scale = float(gc.get("scale", 1.0))
+        if not 0.0 <= self.gravity_scale <= 1.0:
+            raise ValueError("robot.gravity_comp.scale phải trong [0, 1]")
 
     def connect(self):
         """Đọc tư thế khi motor còn tắt (2 lần đọc khớp nhau). Trả về trạng thái theo góc URDF."""
@@ -271,7 +274,7 @@ class OpenArmCANRobot:
         for s, a in self.arms.items():
             q_u = np.clip(np.asarray(cmd[s][:7], float), a.ulo, a.uhi)     # chốt chặn cuối, theo góc URDF
             q_m = a.to_motor(q_u, near=a.q_motor)
-            ff = np.zeros(7) if tau is None else a.sign * tau[s]
+            ff = np.zeros(7) if tau is None else a.sign * tau[s] * self.gravity_scale * ramp   # tăng dần cùng gain
             dq_m = np.zeros(7)
             if dq is not None and dq.get(s) is not None:
                 dq_m = a.sign * np.nan_to_num(np.asarray(dq[s][:7], float))

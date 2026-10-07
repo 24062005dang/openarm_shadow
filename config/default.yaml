@@ -214,7 +214,7 @@ safety:
   resume_after_s: 0.3        # khớp đứng yên (mất tay / hướng tay chưa chắc) lâu hơn mức này rồi chạy lại ->
   resume_blend_s: 1.0        #   tăng tốc mềm riêng khớp đó trong 1 s (cổ tay không xoay vụt tới hướng mới)
   engage_blend_s: 1.5
-  # Bám theo vận tốc + gửi vận tốc xuống motor (dq của MIT). Mặc định TẮT; bật bằng --config config/real_tracking.yaml (robot thật).
+  # Bám theo vận tốc + gửi vận tốc xuống motor (dq của MIT). Mặc định TẮT; robot thật bật trong config/real.yaml (robot thật).
   velocity_tracking:
     enabled: false
     gain: 8.0                # 1/s: kéo lệnh về mục tiêu
@@ -268,6 +268,7 @@ robot:
   gravity_comp:
     enabled: false
     urdf: null            # đường dẫn tới openarm_description/.../openarm_v1.0/urdf/example/v1.urdf
+    scale: 1.0            # 0..1 nhân mô-men bù (robot thật: 0,5 trong config/real.yaml)
   rest_pose_deg: [0, 0, 0, 0, 0, 0, 0]   # tư thế nghỉ (tay thả xuôi) để về trước khi tắt
   park_vel_deg_s: 20
   # Chỉ dùng với --robot mujoco (openarm_shadow/robot/mujoco_robot.py). Nên chạy kèm config/mujoco_sim.yaml.

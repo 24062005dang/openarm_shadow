@@ -46,7 +46,7 @@ khi cắm lại USB. J5–J7 phải đo trước khi dùng cổ tay: khớp nào
 **Tay trái v1.0 đọc J1 ≈ 178°, J2 ≈ 180° là BÌNH THƯỜNG** (sửa nhận định cũ ngày 28/09): motor J1, J2 tay trái lắp
 lệch 180°, J5–J7 và kẹp cũng có offset riêng (`openarm_driver/configs/openarm_v1.yaml`, `joint_offsets` tay trái
 `[π, π, 0, 0, −1,191, 0,115, 0,033, 0,955]` rad). Đọc 02/10: J1 178,1°, J2 180,2° → URDF −1,9°, +0,2°. Các offset này
-nằm trong `config/both_arms_real.yaml`; backend wrap góc ±180° nên số đọc +178° hay −182° đều đúng. J5–J7 tay trái
+nằm trong `config/real.yaml`; backend wrap góc ±180° nên số đọc +178° hay −182° đều đúng. J5–J7 tay trái
 chưa kiểm chứng: dry-run trước khi mở cổ tay trái.
 
 **Zero motor sai.** Tay thả xuôi mà `read_joints.py` đọc ra góc lớn KHÔNG giải thích được bằng offset trên (sau khi trừ
@@ -78,22 +78,26 @@ engage chậm 3 s.
 - Ổn rồi mới: tay trái (`--arms left`), rồi hai tay, rồi nới giới hạn (quay về config/default.yaml), rồi J5–J7 sau khi
   đã kiểm tra chiều bằng dry-run.
 
-Sau khi đã xác minh zero và chiều J5–J7 bằng dry-run, dùng `config/wrist_real_30.yaml` cho lượt thử xoay tay phải.
-Profile này mở toàn bộ dải cơ khí chính thức của tay phải; ba khớp cổ tay giới hạn 30°/s (muốn chậm hơn thì hạ `safety.max_vel_deg_s`).
-Không dùng profile này nếu hình que xanh lá trong dry-run quay ngược robot thật ở bất kỳ khớp J5–J7 nào.
+Cấu hình chạy thật hằng ngày: `config/real.yaml` (đã chạy ổn 07/10), luôn dry-run trước:
+```bash
+python scripts/shadow.py --source multi --robot openarm --dry-run --config config/real.yaml --config config/fusion_3cam.yaml
+python scripts/shadow.py --source multi --robot openarm --config config/real.yaml --config config/fusion_3cam.yaml
+```
+- Hai tay + kẹp; tay trái = ảnh gương tay phải (giới hạn, chiều).
+- Tốc độ 45–90°/s với `velocity_tracking` (lệnh chạy đều giữa 2 khung camera ~14 Hz). Feedforward vận tốc dq TẮT:
+  real2 07/10 bật dq thì robot rung qua lại nhiều hơn lệnh 2–5 lần. Trần 20/30°/s cũ: robot đuổi ở trần 51% lúc chạy.
+- Bù trọng lực (Pinocchio, URDF v1.0, `scale: 0.5`): tay không võng khi giơ cao. Pinocchio so với MuJoCo cùng dấu,
+  thấp hơn ~7–10%. Cần `pip install pin`.
+- J2 tới 170° (giới hạn mềm và motor) để giơ tay quá vai; default.yaml vẫn chặn motor J2 ở 90°. Chưa có kiểm tra va
+  chạm tay – đầu/khung: giơ tay qua đầu chậm, người cầm E-stop nhìn khoảng hở.
+- IK ở T-pose (J1 trùng trục J3): cánh tay trên cách trục J1 < 20° thì J1 giữ dần giá trị cũ
+  (`retarget.shoulder_singular_deg`), không lật sang nhánh J1 ≈ 180°.
+- Không dùng nếu hình que xanh lá trong dry-run quay ngược robot thật ở bất kỳ khớp nào.
 
-Bám liên tục giữa các khung camera: thêm `--config config/real_tracking.yaml` ở CUỐI. Profile này bật
-`velocity_tracking` (lệnh chạy đều theo vận tốc mục tiêu) và nâng trần tốc độ lên 45–90°/s. Feedforward vận tốc
-(dq) TẮT: real2 07/10 bật dq thì robot rung qua lại nhiều hơn chính lệnh 2–5 lần. Ở trần 20/30°/s của
-`wrist_real_30.yaml`, robot đuổi ở trần 51% thời gian lúc chạy (real1 06/10), nên bộ lọc hay velocity tracking đều
-không giúp robot theo kịp. Nâng trần mà không bật velocity tracking thì lệnh chạy vụt tới rồi đứng chờ khung camera
-sau. Mới kiểm bằng phát lại lệnh, CHƯA chạy trên robot thật: lần đầu người giữ E-stop, ghi `--record` và so
-`ctl_meas` với `ctl_cmd`. Đã biết: ở chỗ tay đổi chiều, lệnh vọt quá đích khoảng 1–2° (ngoại suy vận tốc).
 Offset phần mềm tay phải (01/10, `read_joints.py` ở tư thế nghỉ): J4 −3,0° (khuỷu rơ, đọc −1…−8°), J5–J7 = 0 (đọc trong ±2°; số 29/09 +4,8/−4,5/+4,1 không còn đúng). Không ghi lại zero motor. Đo lại mỗi buổi.
 
 ## 5. Những gì CHƯA có
-- Bù trọng lực tắt mặc định. Không bù, với kp = 70 tay giơ ngang có thể võng khoảng 8° (ước tính từ mô men
-  trọng lực ~10 Nm ở vai theo URDF). Bật `robot.gravity_comp` (cần `pip install pin` và đường dẫn URDF) sau khi thử từng khớp.
+- Bù trọng lực chỉ bật trong `config/real.yaml` (scale 0,5); default.yaml và first_real.yaml đơn lẻ không bù.
 - Kẹp tắt mặc định: gripper 1.0 có thể đang ở chế độ POS_FORCE, và chiều mở/đóng chưa đo.
 - Chống va chạm tay–tay **TẮT mặc định** (`safety.self_collision.enabled: false`) để chuyền vật giữa hai tay: không còn
   gì ngăn hai tay robot đâm vào nhau, người điều khiển tự tránh, E-stop luôn trong tay. Bật lại (`true`) khi không cần

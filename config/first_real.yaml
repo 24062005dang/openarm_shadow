@@ -1,11 +1,12 @@
 # Cấu hình cho LẦN CHẠY THẬT ĐẦU TIÊN (chỉ ghi các khoá khác config/default.yaml).
-#   python scripts/shadow.py --robot openarm --arms right --config config/first_real.yaml
+#   python scripts/shadow.py --source multi --robot openarm --arms right \
+#       --config config/real.yaml --config config/fusion_3cam.yaml --config config/first_real.yaml
 #
 # - Chỉ J1–J4 (vai + khuỷu). J5, J6, J7 khoá ở 0: chiều J5–J7 chưa đo (docs/SAFETY.md bước 3).
 # - Biên độ nhỏ: tay không giơ quá 45°, không khép vào giữa ngực.
 # - Tốc độ tối đa 20°/s, engage chậm 3 s.
-# - Không bù trọng lực: với biên độ này tay võng khoảng vài độ, chấp nhận được cho lần đầu.
-# Chạy ổn rồi mới nới dần từng giới hạn, hoặc quay về config/default.yaml.
+# - Đặt SAU real.yaml: lấy offset / kẹp / hai tay / bù trọng lực của real.yaml, chỉ thu nhỏ giới hạn và tốc độ.
+# Chạy ổn rồi bỏ file này (chạy real.yaml).
 
 safety:
   max_vel_deg_s: [20, 20, 20, 20, 20, 20, 20]
