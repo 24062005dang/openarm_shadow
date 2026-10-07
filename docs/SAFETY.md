@@ -3,6 +3,11 @@
 Làm lần lượt, không bỏ bước. Luôn có một người cầm E-stop, không ai đứng trong tầm với của tay.
 
 ## 1. Bring-up CAN
+```bash
+./tools/bringup/setup_can.sh          # bật can0 + can1 (1 Mbps / 5 Mbps CAN-FD, sample point 0.75); chạy lại mỗi khi cắm lại USB-CAN / khởi động lại máy
+ip -br link | grep can                # cả hai phải báo UP (BUS-OFF: chạy lại setup_can.sh, kiểm tra dây / bitrate)
+candump -n 20 can0                    # có frame khi đã bật nguồn robot
+```
 Làm theo `tools/bringup/README.md` (setup_can.sh → read_joints.py → wiggle_j7.py). Phải đọc được đủ 7 khớp
 mỗi tay và lắc J7 thành công.
 
@@ -59,7 +64,8 @@ có người cầm E-stop, báo nhóm trước vì nó ghi vào motor. Lệch nh
 
 ## 4. Lần chạy thật đầu tiên
 ```bash
-python scripts/shadow.py --robot openarm --arms right --config config/first_real.yaml
+python scripts/shadow.py --source multi --robot openarm --arms right \
+    --config config/first_real.yaml --config config/fusion_3cam.yaml
 ```
 `config/first_real.yaml`: chỉ J1–J4, J5–J7 khoá ở 0; J1 ≤ 45°, J2 0…45°, J3 ±30°, J4 0…90°; tốc độ tối đa 20°/s;
 engage chậm 3 s.
@@ -72,9 +78,17 @@ engage chậm 3 s.
 - Ổn rồi mới: tay trái (`--arms left`), rồi hai tay, rồi nới giới hạn (quay về config/default.yaml), rồi J5–J7 sau khi
   đã kiểm tra chiều bằng dry-run.
 
-Sau khi đã xác minh zero và chiều J5–J7 bằng dry-run, dùng `config/d455_wrist_real.yaml` cho lượt thử xoay tay phải.
-Profile này mở toàn bộ dải cơ khí chính thức của tay phải; ba khớp cổ tay vẫn được giới hạn ở 15°/s trong lượt xác minh.
+Sau khi đã xác minh zero và chiều J5–J7 bằng dry-run, dùng `config/wrist_real_30.yaml` cho lượt thử xoay tay phải.
+Profile này mở toàn bộ dải cơ khí chính thức của tay phải; ba khớp cổ tay giới hạn 30°/s (muốn chậm hơn thì hạ `safety.max_vel_deg_s`).
 Không dùng profile này nếu hình que xanh lá trong dry-run quay ngược robot thật ở bất kỳ khớp J5–J7 nào.
+
+Bám liên tục giữa các khung camera: thêm `--config config/real_tracking.yaml` ở CUỐI. Profile này bật
+`velocity_tracking` (lệnh chạy đều theo vận tốc mục tiêu) và nâng trần tốc độ lên 45–90°/s. Feedforward vận tốc
+(dq) TẮT: real2 07/10 bật dq thì robot rung qua lại nhiều hơn chính lệnh 2–5 lần. Ở trần 20/30°/s của
+`wrist_real_30.yaml`, robot đuổi ở trần 51% thời gian lúc chạy (real1 06/10), nên bộ lọc hay velocity tracking đều
+không giúp robot theo kịp. Nâng trần mà không bật velocity tracking thì lệnh chạy vụt tới rồi đứng chờ khung camera
+sau. Mới kiểm bằng phát lại lệnh, CHƯA chạy trên robot thật: lần đầu người giữ E-stop, ghi `--record` và so
+`ctl_meas` với `ctl_cmd`. Đã biết: ở chỗ tay đổi chiều, lệnh vọt quá đích khoảng 1–2° (ngoại suy vận tốc).
 Offset phần mềm tay phải (01/10, `read_joints.py` ở tư thế nghỉ): J4 −3,0° (khuỷu rơ, đọc −1…−8°), J5–J7 = 0 (đọc trong ±2°; số 29/09 +4,8/−4,5/+4,1 không còn đúng). Không ghi lại zero motor. Đo lại mỗi buổi.
 
 ## 5. Những gì CHƯA có

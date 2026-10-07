@@ -1,81 +1,55 @@
-# Fusion 3 camera cho 2 tay (triangulate vai/khuỷu/cổ tay từ cả 3 camera):
-#   camera 0 = webcam laptop (Sonix USB2.0 HD, 1280x720 MJPG 30 fps), TRỰC DIỆN (khung tham chiếu, không có depth)
-#   camera 1 = RealSense D435i, lệch ~45° về phía tay PHẢI người điều khiển (có depth)
-#   camera 2 = điện thoại (iPhone, DroidCam qua USB), lệch ~45° về phía tay TRÁI (không có depth)
-# Mỗi tay luôn có camera trực diện + camera lệch cùng phía nhìn rõ: tay trái không còn chỉ 1 camera thấy.
+# Fusion 3 camera cho 2 tay, KHÔNG dùng iPhone (iPhone DroidCam trễ ~54 ms so với webcam/RealSense):
+#   camera 0 = webcam laptop TRỰC DIỆN ở giữa (khung tham chiếu, không depth) - máy RTX 3050 của nhóm (Sonix USB2.0 HD,
+#              1280x720 MJPG 30 fps)
+#   camera 1 = RealSense D455, lệch ~45° về phía tay PHẢI người điều khiển (có depth)
+#   camera 2 = RealSense D435i, lệch ~45° về phía tay TRÁI (có depth)
+# Cả 3 camera trễ thấp như nhau -> sync latest (không chờ, không bỏ khung).
 #
-#   iproxy 4747:4747                                     # iPhone: chuyển cổng DroidCam qua cáp (để chạy nền)
-#   python scripts/list_cameras.py                       # xem chỉ số webcam laptop + serial D435i
-#   python scripts/calibrate_cameras.py --config config/fusion_3cam.yaml   # hiệu chuẩn (điện thoại: cả nội tham số)
+#   python scripts/list_cameras.py           # chỉ số webcam + serial 2 RealSense; cả 2 phải báo USB 3.x
+#   python scripts/calibrate_cameras.py --config config/fusion_3cam.yaml --redo-intrinsics
 #   python scripts/shadow.py --source multi --config config/fusion_3cam.yaml          # mô phỏng 2 tay
-#   robot thật: config robot TRƯỚC file này, xem config/both_arms_real.yaml
+#   robot thật: config robot TRƯỚC file này (xem config/both_arms_real.yaml), dry-run trước.
 #
-# Camera đầu tiên là khung tham chiếu và là camera để tự hiệu chuẩn tay ("lòng bàn tay nhìn camera").
-# Khi cắm D435i, nó cũng tạo thêm vài /dev/video*: webcam laptop KHÔNG chắc là chỉ số 0, kiểm tra bằng list_cameras.
+# Xê dịch bất kỳ camera nào (kể cả gập màn hình laptop) sau khi hiệu chuẩn -> chạy lại calibrate_cameras.py.
+# 2 RealSense: mỗi cái một cổng USB 3 riêng (hoặc hub USB 3 có nguồn riêng), không chung cổng với bộ CAN.
 
 fusion:
   board: {squares_x: 7, squares_y: 5, square_m: 0.04, marker_m: 0.03, dictionary: DICT_5X5_1000}
   cameras:
-    # Webcam laptop trực diện: đặt laptop cao ngang ngực, cách người 1,2-1,5 m, thấy trọn vai-hông-tay.
-    # Xê dịch laptop / gập màn hình sau khi hiệu chuẩn -> phải chạy lại calibrate_cameras.py.
-    # source 0: cắm D435i sẽ thêm /dev/video*, kiểm tra webcam vẫn là 0 bằng scripts/list_cameras.py.
-    # weight: độ tin cậy so với camera khác (mặc định 1).
+    # Webcam laptop ở giữa: cao ngang ngực, cách người 1,2-1,5 m, thấy trọn ĐẦU-vai-hông-tay (Pose dò người từ mặt).
+    # Cắm RealSense sẽ thêm /dev/video*: kiểm tra webcam vẫn là chỉ số 0 bằng scripts/list_cameras.py.
     - {name: front, source: 0, latency_s: 0.0, weight: 1.0, pose: true}
-    # D435i lệch 45°, cùng độ cao, cùng khoảng cách. Chỉ có 1 RealSense nên serial để trống cũng được.
-    # pose: false -> D435i chỉ chạy Hand (bàn tay + depth), không chạy Pose: nhẹ gần một nửa.
-    - {name: side45, source: realsense, serial: "", pose: true}
-    # Điện thoại lệch 45° về phía tay trái, đối xứng với D435i: cùng độ cao, cùng khoảng cách, nằm ngang, không zoom.
-    # iPhone: app DroidCam (chọn "PC Webcam") để ở màn hình chính + `iproxy 4747:4747` trên PC. Android: DroidCam /
-    # IP Webcam qua Wi-Fi -> source: "http://<ip điện thoại>:<cổng>/video" (trễ hơn, đặt latency_s ~0.1).
-    # Phải phát 1280x720 như camera.width/height (cả 3 camera OpenCV dùng chung kích thước này).
-    # Android qua scrcpy (cáp USB, bật gỡ lỗi USB) -> webcam ảo /dev/video10 (v4l2loopback):
-    #   sudo modprobe v4l2loopback video_nr=10 card_label=scrcpy exclusive_caps=1
-    #   scrcpy --video-source=camera --camera-facing=back --camera-size=1280x720 --camera-fps=30 \
-    #          --v4l2-sink=/dev/video10 --no-video-playback --no-audio
-    # Wi-Fi DroidCam cũ: source: "http://192.168.24.134:4747/video", latency_s: 0.1
-    # Đang dùng: iPhone DroidCam qua cáp USB. Cần iPhone "Tin cậy" máy (idevicepair pair) + `iproxy 4747:4747`.
-    # Wi-Fi: source: "http://<IP trong app DroidCam>:4747/video", latency_s: 0.1
-    # Android scrcpy: source: 10
-    - {name: side45_left, source: "http://127.0.0.1:4747/video", latency_s: 0.05, weight: 1.0, pose: true}
-  # File riêng cho bộ 3 camera (bộ 2 camera vẫn dùng config/cameras_calib.yaml)
-  calib_file: config/cameras_calib_3cam.yaml
+    - {name: right45, source: realsense, serial: "341522301338", pose: true}   # D455
+    - {name: left45, source: realsense, serial: "243122071323", pose: true}    # D435i
+  calib_file: config/cameras_calib_3cam_rs.yaml
   body_source: triangulate
-  # iPhone (DroidCam USB) đến máy chậm hơn webcam ~54 ms (đo 02/10, measure_camera_latency.py): sync latest bỏ iPhone
-  # ở 79-100% khung. slowest: chờ khung iPhone cùng thời điểm -> cả 3 camera cùng góp, robot trễ thêm ~60 ms.
-  sync: slowest
-  pair_wait_s: 0.0           # không chờ camera phụ: lấy khung gần nhất đang có -> vòng lặp không khựng
+  sync: latest
+  pair_wait_s: 0.0
 
 camera:
-  # Kích thước khung camera front, phải giống lúc hiệu chuẩn (chương trình kiểm tra). Đổi camera thì sửa lại và
-  # chạy lại calibrate_cameras.py. Webcam laptop: 1280x720 chỉ được 30 fps ở MJPG (YUYV 720p chỉ 10 fps).
+  # Kích thước khung webcam (phải giống lúc hiệu chuẩn). Webcam laptop: 1280x720 chỉ được 30 fps ở MJPG.
   width: 1280
   height: 720
   fourcc: MJPG
   fps: 30
-  v4l2:                           # cần: sudo apt install v4l-utils. Danh sách control: scripts/webcam_check.py
-    power_line_frequency: 1       # 50 Hz (điện VN): hết sọc nhấp nháy dưới đèn huỳnh quang/LED
-    exposure_dynamic_framerate: 0 # không cho webcam tự hạ fps khi phòng tối (giữ 30 fps, ảnh tối hơn chút)
-    # sharpness: 3                # 0-6, mặc định 2. Làm nét trong webcam: cao quá thì viền trắng + nhiễu
-    # auto_exposure: 1            # 1 = chỉnh tay (3 = tự động); kèm exposure_time_absolute (625-5000,
-    # exposure_time_absolute: 625 #   mặc định 2500): nhỏ hơn = ít nhoè khi tay cử động nhưng tối hơn
+  v4l2:                           # cần: sudo apt install v4l-utils
+    power_line_frequency: 1       # 50 Hz (điện VN): hết sọc nhấp nháy dưới đèn
+    exposure_dynamic_framerate: 0 # không cho webcam tự hạ fps khi phòng tối
   realsense:
-    # 848x480 (16:9): đủ góc ngang 70° của cảm biến màu D435i. 640x480 (4:3) bị cắt hai bên còn 56° -> tay hay ra
-    # ngoài khung. Góc dọc như nhau (43°). Nội tham số D435i đọc từ máy lúc chạy, không cần hiệu chuẩn lại.
+    # 848x480: đủ góc ngang của cảm biến màu (D455 ~90°, D435i ~70°); nội tham số đọc từ camera lúc chạy.
     width: 848
     height: 480
     fps: 30
-    spatial_filter: false    # tắt bộ lọc spatial (tốn CPU) để D435i giữ gần 30 fps; median quanh điểm đã khử nhiễu
+    spatial_filter: false
 
 filter:
-  # Lọc khung xương cánh tay: điểm triangulate có thang mét -> độ dài đoạn tay nhất quán (xem config/default.yaml)
   arm_shape: {enabled: true}
-  landmark_kalman: {enabled: true} 
+  landmark_kalman: {enabled: true}
 
 models:
-  # GPU RTX 3050 (đo 02/10: Pose 5 ms, Hand 5,5 ms; CPU 15 ms mỗi loại): Pose chạy MỌI khung trên cả 3 camera để
-  # triangulate vai/khuỷu/cổ tay. Dưới ~15 fps thì đặt pose_interval: 2. GPU lỗi -> tự về CPU (in cảnh báo).
-  # Pose hụt <= 6 lần vẫn giữ kết quả cũ. Vẫn chậm (< 12 fps) thì đổi sang bản lite.
+  # GPU RTX 3050 (đo 02/10: Pose 5 ms, Hand 5,5 ms). Máy chỉ có CPU (Dell 5490): delegate cpu,
+  # pose_landmarker_lite.task, pose_interval 2-3 (3 camera trên CPU chỉ ~1,5 fps - không đủ chạy robot).
   delegate: gpu
   pose: models/pose_landmarker_full.task
   pose_interval: 1
-  pose_hold_frames: 6 
+  pose_hold_frames: 6

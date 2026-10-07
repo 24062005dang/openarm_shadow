@@ -1,6 +1,6 @@
 # Robot thật tự đồng bộ (engage) khi READY liên tục 5 s, không cần bấm SPACE. Đặt SAU các config robot / fusion:
 #   python scripts/shadow.py --source multi --robot openarm \
-#       --config config/wrist_real_30.yaml --config config/gripper_real.yaml --config config/both_arms_real.yaml \
+#       --config config/wrist_real_30.yaml --config config/both_arms_real.yaml \
 #       --config config/fusion_3cam.yaml --config config/auto_engage_real.yaml
 # Vẫn phải gõ 'yes' để bật motor. Chỉ tự engage MỘT lần mỗi lần chạy: nhả bằng SPACE / E-stop rồi thì không tự bám
 # lại, phải bấm SPACE. Engage vẫn tăng tốc mềm theo safety.engage_blend_s. Người điều khiển đã đứng yên, tay thả

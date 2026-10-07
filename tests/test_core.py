@@ -176,8 +176,8 @@ def test_joint_filter_per_joint_jump():
     assert held[0] and not held[1]
 
 
-def test_wrist_fast_config_tracks_faster():
-    cfg = load_config(Path(__file__).resolve().parents[1] / "config" / "wrist_fast.yaml")
+def test_wrist_real_30_filter_tracks_faster():
+    cfg = load_config(Path(__file__).resolve().parents[1] / "config" / "wrist_real_30.yaml")
     base = load_config()["filter"]
     fast = cfg["filter"]
     mk = lambda fc: JointFilter(8, fc["min_cutoff"], fc["beta"], fc["deadband_deg"], fc["jump_deg"],
@@ -193,7 +193,7 @@ def test_wrist_fast_config_tracks_faster():
             out, _ = jf(x, np.ones(8), k / 11)
         lag[name] = 90 - np.rad2deg(out[6])
     assert lag["fast"] < 0.5 * lag["base"]
-    assert cfg["safety"]["max_vel_deg_s"][:4] == load_config()["safety"]["max_vel_deg_s"][:4]
+    assert cfg["safety"]["max_vel_deg_s"][:4] == [20] * 4 and cfg["safety"]["max_vel_deg_s"][4:] == [30] * 3
 
 
 # ---------------- an toàn ----------------

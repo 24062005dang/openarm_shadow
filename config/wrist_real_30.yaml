@@ -1,10 +1,9 @@
-# Tay phải OpenArm thật: cổ tay J5-J7 30°/s + bộ lọc cổ tay nhanh (từ config/wrist_fast.yaml).
-#   python scripts/shadow.py --robot openarm --arms right --source 0 --config config/wrist_real_30.yaml
+# Tay phải OpenArm thật: cổ tay J5-J7 30°/s, bộ lọc cổ tay nhanh, kẹp bật.
+#   python scripts/shadow.py --robot openarm --arms right --source multi \
+#       --config config/wrist_real_30.yaml --config config/fusion_3cam.yaml
 #
-# Bước tiếp theo sau config/d455_wrist_real.yaml (15°/s). Chỉ dùng khi:
-#   1. Dry-run đã xác nhận chiều J5-J7 (hình xanh lá xoay cùng chiều robot thật).
-#   2. Đã chạy ổn d455_wrist_real.yaml ở 15°/s.
-# Giới hạn góc và offset giống d455_wrist_real.yaml; sửa offset ở CẢ HAI file khi đo lại.
+# Chỉ dùng khi dry-run đã xác nhận chiều J5-J7 (hình xanh lá xoay cùng chiều robot thật).
+# Offset tay phải ghi ở file này và first_real.yaml: đo lại thì sửa cả hai.
 
 filter:
   #           J1   J2   J3   J4   J5   J6   J7   kẹp
@@ -32,6 +31,7 @@ robot:
   urdf_to_motor:
     right:
       sign: [1, 1, 1, 1, 1, 1, 1]
-      # Đồng bộ với first_real.yaml / d455_wrist_real.yaml (đo 01/10): J4 -3.0, J5-J7 = 0. Đo lại mỗi buổi.
-      # (Trước đây file này còn số cũ -7.7 / 4.8 / -4.5 / 4.1 trong khi hai file kia đã sửa.)
+      # Đồng bộ với first_real.yaml (đo 01/10): J4 -3.0, J5-J7 = 0. Đo lại mỗi buổi.
       offset_deg: [0, 0, 0, -3.0, 0, 0, 0]
+  # Kẹp tay phải (MECH_LIM_V1 gripper [-60, 0]; đã chạy ổn 02/10). Tay trái ghi đè trong both_arms_real.yaml.
+  gripper: {enabled: true, open_deg: -60, closed_deg: 0, kp: 5.0, kd: 0.1}

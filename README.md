@@ -79,23 +79,20 @@ python scripts/shadow.py --mode mirror          # đứng đối diện robot, n
 python scripts/shadow.py --arms right           # chỉ điều khiển tay phải
 python scripts/shadow.py --source realsense      # D455 duy nhất: RGB MediaPipe + depth metric
 python scripts/shadow.py --source 0              # webcam laptop: không có depth, hướng tay từ MediaPipe
-python scripts/shadow.py --source multi --arms right --config config/fusion_2cam.yaml  # 2 camera, xem docs/FUSION.md
-# robot thật + fusion, cổ tay nhanh (vẫn giới hạn tốc độ): xem docs/FUSION.md bước 6 (config/fusion_real_fast.yaml)
+python scripts/shadow.py --source multi --config config/fusion_3cam.yaml     # 3 camera, 2 tay (cách dùng chính, xem docs/FUSION.md)
 
 # 1b) Như bước 1 nhưng robot là OpenArm v1 trong MuJoCo (vật lý, gain v1.0, bù trọng lực) thay hình que.
 #     config/mujoco_sim.yaml luôn đặt SAU CÙNG. Thêm --robot mujoco vào bất kỳ lệnh nào ở bước 1.
 python scripts/shadow.py --robot mujoco --config config/mujoco_sim.yaml                      # D455
 python scripts/shadow.py --robot mujoco --source 0 --arms right --config config/mujoco_sim.yaml  # webcam laptop
-python scripts/shadow.py --robot mujoco --source multi --arms right \
-    --config config/fusion_2cam.yaml --config config/mujoco_sim.yaml                         # 2 camera
 python scripts/shadow.py --robot mujoco --source multi \
-    --config config/fusion_3cam_rs.yaml --config config/mujoco_sim.yaml                      # 3 camera, 2 tay
+    --config config/fusion_3cam.yaml --config config/mujoco_sim.yaml                         # 3 camera, 2 tay
 # 3 camera (webcam + D455 + D435i): đủ các bước kiểm tra camera, in bảng, hiệu chuẩn, mô phỏng, robot thật trong
 # docs/FUSION.md mục "Fusion 3 camera". Tóm tắt:
 #   python scripts/list_cameras.py
-#   python scripts/make_charuco_board.py --config config/fusion_3cam_rs.yaml -o charuco_3cam_a4.png
-#   python scripts/calibrate_cameras.py --config config/fusion_3cam_rs.yaml --redo-intrinsics
-#   python scripts/shadow.py --source multi --config config/fusion_3cam_rs.yaml
+#   python scripts/make_charuco_board.py --config config/fusion_3cam.yaml -o charuco_3cam_a4.png
+#   python scripts/calibrate_cameras.py --config config/fusion_3cam.yaml --redo-intrinsics
+#   python scripts/shadow.py --source multi --config config/fusion_3cam.yaml
 
 # 2) Chế độ offline: video quay sẵn -> quỹ đạo (thử pipeline khi chưa có robot, thu demo cho IL)
 python scripts/offline_retarget.py demo.mp4 -o demo.npz --show
@@ -103,9 +100,18 @@ python scripts/replay_npz.py demo.npz            # xem lại trên robot mô ph�
 python scripts/replay_npz.py demo.npz --robot mujoco --config config/mujoco_sim.yaml   # xem lại trong MuJoCo
 
 # 3) OpenArm thật (làm theo docs/SAFETY.md)
+./tools/bringup/setup_can.sh                                        # bật can0 + can1 (1 Mbps / 5 Mbps CAN-FD); mỗi lần cắm lại USB-CAN hoặc khởi động lại máy
+#   ./tools/bringup/setup_can.sh can0                               # chỉ một cổng
+#   ip -br link | grep can                                          # cả hai phải UP;  candump -n 20 can0  (bật nguồn robot trước)
+python tools/bringup/read_joints.py --iface can0                    # chỉ đọc góc: can0 = tay phải, can1 = tay trái
 python scripts/shadow.py --robot openarm --dry-run                  # motor TẮT: chỉ đọc, kiểm tra chiều khớp
-python scripts/shadow.py --robot openarm --arms right --config config/first_real.yaml   # lần đầu: J1–J4, chậm
-python scripts/shadow.py --robot openarm --arms right --config config/d455_wrist_real.yaml # sau khi xác minh J5–J7
+python scripts/shadow.py --source multi --robot openarm --arms right \
+    --config config/first_real.yaml --config config/fusion_3cam.yaml            # lần đầu: J1–J4, chậm
+python scripts/shadow.py --source multi --robot openarm \
+    --config config/wrist_real_30.yaml --config config/both_arms_real.yaml \
+    --config config/fusion_3cam.yaml                                            # hai tay (sau khi dry-run đúng chiều)
+# tuỳ chọn, thêm CUỐI lệnh: config/real_tracking.yaml (bám liên tục giữa 2 khung camera),
+#                           config/auto_engage_real.yaml (tự đồng bộ khi READY đủ giây)
 ```
 
 Hướng bàn tay tự hiệu chuẩn khi tay thả xuôi, xoè bàn tay, **lòng bàn tay nhìn camera** và đứng yên khoảng 0,6 s; màn hình báo
@@ -129,23 +135,10 @@ Khuỷu / cổ tay (khi bật `filter.landmark_kalman`, có sẵn trong config 3
 loại, dùng dự đoán đặt lại đúng độ dài xương đã học; lệch liên tục vài khung thì nhận (chuyển động nhanh thật).
 Phím `b`: học lại tham chiếu thân (và hiệu chuẩn lại bàn tay). Tắt: `orientation.body_ref.enabled: false`.
 
-Dùng điện thoại làm camera: cài app phát luồng video (vd. DroidCam, IP Webcam) rồi `--source http://<ip>:<port>/video`.
-
-Dùng Intel RealSense D455: cài `pyrealsense2`, cắm vào USB 3 rồi chạy `--source realsense`. Đây là camera duy nhất
-trong pipeline thật: MediaPipe chạy trên RGB của D455, depth đã align/lọc được dùng cho vai, khuỷu, cổ tay và fusion
-21 landmark bàn tay về cùng camera frame metric. Dòng `hand: DEPTH/FUSED` trên màn hình cho biết số điểm depth thật,
-số điểm sau fusion và confidence. Cấu hình mặc định không tự chuyển sang camera laptop nếu D455 mất kết nối.
-Khi bàn tay xòe, point cloud lòng bàn tay được fit thành mặt phẳng và kết hợp với 21 landmark metric để tạo palm
-orientation. Trục đỏ = hướng ngón, xanh lá = ngang lòng bàn tay, xanh dương = pháp tuyến. `PLANE`, `LANDMARK`,
-`HOLD`, `NONE` lần lượt cho biết nguồn/ trạng thái orientation; dữ liệu này điều khiển J5–J7 trong mô phỏng.
-
-Dùng 3 camera (webcam laptop ở giữa + D455 lệch 45° phía tay phải + D435i lệch 45° phía tay trái, 2 tay): làm theo
-[`docs/FUSION.md`](docs/FUSION.md) mục "Fusion 3 camera" (`config/fusion_3cam_rs.yaml`).
-
-Dùng 2 camera (webcam laptop trực diện + D435i lệch 45°): làm theo [`docs/FUSION.md`](docs/FUSION.md) — xem chỉ số
-webcam bằng `scripts/list_cameras.py`, in bảng `scripts/make_charuco_board.py`, hiệu chuẩn 1 lần bằng
-`scripts/calibrate_cameras.py`, rồi chạy `--source multi`. Robot thật: `--config config/first_real.yaml --config
-config/fusion_2cam.yaml` (thứ tự này).
+Camera: **3 camera, 2 tay** = webcam laptop ở giữa (trực diện) + RealSense D455 lệch 45° phía tay phải + RealSense D435i
+lệch 45° phía tay trái (2 camera có depth). Làm theo [`docs/FUSION.md`](docs/FUSION.md) mục "Fusion 3 camera"
+(`config/fusion_3cam.yaml`, hiệu chuẩn `config/cameras_calib_3cam_rs.yaml`). Chạy 1 camera (`--source 0` / `realsense`)
+vẫn được để thử nhanh, nhưng không phải cấu hình đang dùng.
 
 Dùng robot MuJoCo (`--robot mujoco`): thay robot "lý tưởng" (đo = lệnh) bằng OpenArm v1 trong MuJoCo. Vẫn đi qua
 đúng pipeline và SafetyGate như robot thật, chỉ khác backend (`openarm_shadow/robot/mujoco_robot.py`). Có hai cửa sổ:
@@ -223,6 +216,6 @@ tests/                       pytest
 docs/README.md               mục lục tài liệu + lộ trình
 docs/01..07_*.md             phân tích đề tài, OpenArm v1.0, bring-up, dữ liệu, 2 bài báo, tham khảo
 docs/SAFETY.md, DESIGN.md    checklist an toàn, thiết kế code
-docs/FUSION.md               fusion 2 camera: đặt camera, hiệu chuẩn, chạy, đọc màn hình, giới hạn
+docs/FUSION.md               fusion 3 camera: đặt camera, hiệu chuẩn, chạy, đọc màn hình, giới hạn
 docs/research/               phân tích 5 repo, bản dịch SEW-Mimic và Hand Shadowing
 ```

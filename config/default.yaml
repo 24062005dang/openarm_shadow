@@ -62,7 +62,7 @@ orientation:
   # Dịch chuyển thật: 2 vai cùng lệch, bề rộng vai đổi < shoulder_width_tol (15%) liên tục adopt_s. Tham chiếu cũ: mọi
   # điểm "bị che" liên tục stale_s (3 s) -> nhận vị trí đang đo (người đổi chỗ đứng sau khi học, fusion nhiễu).
 
-# Fusion nhiều camera: chỉ dùng khi chạy --source multi (xem config/fusion_2cam.yaml và docs/FUSION.md).
+# Fusion nhiều camera: chỉ dùng khi chạy --source multi (xem config/fusion_3cam.yaml và docs/FUSION.md).
 fusion:
   calib_file: config/cameras_calib.yaml   # do scripts/calibrate_cameras.py tạo
   cameras: []                # [{name, source: realsense|<chỉ số webcam>, serial, latency_s, weight}]; camera đầu = khung tham chiếu
@@ -163,7 +163,7 @@ filter:
   # One Euro cho 8 phần tử: J1..J7, kẹp
   min_cutoff: [0.6, 0.6, 0.5, 0.6, 0.5, 0.5, 0.5, 1.5]
   # beta (đơn vị rad/s): bộ lọc tự nới khi khớp chuyển động. 0.02 gần như không nới -> J1-J4 trễ 130-200 ms.
-  # Tăng lên 0.4-0.5 (như fusion_real_fast.yaml) bớt ~70 ms trễ nhưng đứng yên rung hơn khi nhiễu Pose lớn (3-5°):
+  # Tăng lên 0.4-0.5 bớt ~70 ms trễ nhưng đứng yên rung hơn khi nhiễu Pose lớn (3-5°):
   # đo bằng scripts/measure_lag.py trước khi đổi mặc định.
   beta: [0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.3]
   deadband_deg: [1.5, 1.5, 2.5, 1.5, 3, 3, 3, 0.02]   # phần tử kẹp tính theo đơn vị 0..1 (0 = tắt); 0.02 = bớt rung motor kẹp
@@ -212,7 +212,7 @@ safety:
   resume_after_s: 0.3        # khớp đứng yên (mất tay / hướng tay chưa chắc) lâu hơn mức này rồi chạy lại ->
   resume_blend_s: 1.0        #   tăng tốc mềm riêng khớp đó trong 1 s (cổ tay không xoay vụt tới hướng mới)
   engage_blend_s: 1.5
-  # Bám theo vận tốc + gửi vận tốc xuống motor (dq của MIT). Mặc định TẮT; bật bằng --config config/velocity_ff.yaml.
+  # Bám theo vận tốc + gửi vận tốc xuống motor (dq của MIT). Mặc định TẮT; bật bằng --config config/real_tracking.yaml (robot thật).
   velocity_tracking:
     enabled: false
     gain: 8.0                # 1/s: kéo lệnh về mục tiêu

@@ -16,7 +16,7 @@ def _merge(a, b):
 def load_config(path=None):
     """Đọc config/default.yaml, rồi ghi đè bằng file của bạn (chỉ cần ghi các khoá muốn đổi).
 
-    path: một file, hoặc danh sách file ghép lần lượt (file sau thắng), vd [first_real.yaml, fusion_2cam.yaml].
+    path: một file, hoặc danh sách file ghép lần lượt (file sau thắng), vd [first_real.yaml, fusion_3cam.yaml].
     """
     cfg = yaml.safe_load(DEFAULT.read_text())
     for p in ([path] if isinstance(path, (str, Path)) else (path or [])):

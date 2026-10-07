@@ -2,7 +2,7 @@
 """Liệt kê camera: RealSense (tên, serial, USB) và webcam OpenCV mở được (chỉ số, tên thiết bị).
 
     python scripts/list_cameras.py
-Điền chỉ số webcam laptop và serial D435i vào fusion.cameras (config/fusion_2cam.yaml).
+Điền chỉ số webcam laptop và serial D455 / D435i vào fusion.cameras (config/fusion_3cam.yaml).
 """
 import os
 from pathlib import Path

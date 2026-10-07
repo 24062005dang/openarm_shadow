@@ -1,12 +1,11 @@
-# Hai tay OpenArm thật. Đặt SAU config tay phải + kẹp, TRƯỚC config fusion:
+# Hai tay OpenArm thật. Đặt SAU wrist_real_30.yaml (tay phải + kẹp), TRƯỚC config fusion:
 #   python scripts/shadow.py --source multi --robot openarm --dry-run \
-#       --config config/wrist_real_30.yaml --config config/gripper_real.yaml \
-#       --config config/both_arms_real.yaml --config config/fusion_3cam.yaml
+#       --config config/wrist_real_30.yaml --config config/both_arms_real.yaml --config config/fusion_3cam.yaml
 #   (bỏ --dry-run để chạy thật, sau khi dry-run đã đúng chiều mọi khớp tay trái)
 #
-# Tay phải: giữ như wrist_real_30.yaml + gripper_real.yaml (đã chạy ổn 02/10: J1-J7 + kẹp).
-# Tay trái, lượt đầu (như tay phải ngày 30/09): J1-J4 biên độ nhỏ, J5-J7 khoá ở 0, kẹp bật. Ổn rồi mới mở cổ tay:
-# thêm --config config/both_arms_wrist_real.yaml NGAY SAU file này.
+# Tay phải: như wrist_real_30.yaml (đã chạy ổn 02/10: J1-J7 + kẹp). Tay trái: giới hạn khớp = ảnh gương tay phải
+# (left: mirror), cổ tay mở như tay phải; offset và chiều bên dưới. Lượt đầu thận trọng: ghép first_real.yaml thay
+# wrist_real_30.yaml -> hai tay chỉ J1-J4 nhỏ.
 
 mapping:
   robot_arms: [right, left]
@@ -15,8 +14,7 @@ safety:
   soft_limits_deg:
     # Tay trái điều khiển y như tay phải: giới hạn = ảnh gương giới hạn tay phải (mapping.arm.MIRROR_SIGNS; J1, J2 đảo
     # dấu: phải J2 [-9, 90] -> trái [-90, 9]). Tính sau khi ghép config: first_real -> trái cũng chỉ J1-J4 nhỏ,
-    # wrist_real_30 -> trái mở J1-J7 như phải. Lượt đầu thận trọng cũ (05/10 trở về trước): J1 [-45,10] J2 [-45,0]
-    # J3 [-30,30] J4 [0,90], cổ tay khoá.
+    # wrist_real_30 -> trái mở J1-J7 như phải.
     left: mirror
 
 robot:
@@ -36,5 +34,5 @@ robot:
     # Kẹp tay trái: zero motor mới 05/10 (read_joints.py --iface can1): đóng hết cỡ ~0°, mở hết cỡ -68.4° (chặn cơ khí).
     # Dùng 60° hành trình như tay phải (mở -60°: cách chặn ~8°, không ép vào chặn).
     # Số cũ (02/10): đóng 53.0°, mở ~-14.8° - không còn đúng.
-    # Kẹp phải: robot.gripper chung (gripper_real.yaml).
+    # Kẹp phải: robot.gripper chung (wrist_real_30.yaml).
     left: {enabled: true, open_deg: -60.0, closed_deg: 0.0}

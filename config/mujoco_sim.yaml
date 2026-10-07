@@ -2,7 +2,7 @@
 #
 #   python scripts/demo_sim.py --robot mujoco --config config/mujoco_sim.yaml          # không cần camera
 #   python scripts/shadow.py --robot mujoco --config config/mujoco_sim.yaml            # D455
-#   python scripts/shadow.py --robot mujoco --source multi --config config/fusion_3cam_rs.yaml --config config/mujoco_sim.yaml
+#   python scripts/shadow.py --robot mujoco --source multi --config config/fusion_3cam.yaml --config config/mujoco_sim.yaml
 #
 # Cần: pip install -e '.[mujoco]' (mujoco >= 3.6) và thư mục openarm_mujoco/v1 (MJCF + meshes).
 

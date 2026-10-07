@@ -147,7 +147,7 @@ def test_mirror_mode_equals_sign_flipped_right_arm():
 def test_left_limits_mirror_right_after_config_merge():
     """both_arms_real.yaml: left: mirror -> giới hạn tay trái = ảnh gương giới hạn tay phải của config đang ghép."""
     from openarm_shadow.mapping.arm import mirror_limits_deg
-    full = load_config(["config/wrist_real_30.yaml", "config/gripper_real.yaml", "config/both_arms_real.yaml"])
+    full = load_config(["config/wrist_real_30.yaml", "config/both_arms_real.yaml"])
     lim = full["safety"]["soft_limits_deg"]
     assert lim["left"] == mirror_limits_deg(lim["right"])
     assert lim["left"] == [[-75, 75], [-90, 9], [-85, 85], [0, 135], [-85, 85], [-40, 40], [-80, 80]]
