@@ -154,6 +154,8 @@ mapping:
 
 retarget:
   elbow_straight_deg: 12   # tay gần thẳng hơn mức này thì giữ J3 (xoay cánh tay không xác định)
+  # Tay sang ngang (T-pose): cánh tay trên cách trục J1 < 5° thì giữ J1, < 20° trộn dần (J1 không xác định, J3 nhận twist)
+  shoulder_singular_deg: [5, 20]
   # Từ 12° tới elbow_j3_full_deg: độ tin cậy J3 tăng dần 0 -> 1. Tay hơi gập (< ~25°) J3 vẫn giữ; bước nhảy J3
   # lớn chỉ nhận khi khuỷu gập rõ (lần chạy thật đầu: J3 trôi tới 87° lúc tay gần thẳng rồi phải quay 147°).
   elbow_j3_full_deg: 30
