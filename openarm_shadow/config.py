@@ -16,7 +16,7 @@ def _merge(a, b):
 def load_config(path=None):
     """Đọc config/default.yaml, rồi ghi đè bằng file của bạn (chỉ cần ghi các khoá muốn đổi).
 
-    path: một file, hoặc danh sách file ghép lần lượt (file sau thắng), vd [first_real.yaml, fusion_2cam.yaml].
+    path: một file, hoặc danh sách file ghép lần lượt (file sau thắng), vd [first_real.yaml, fusion_3cam.yaml].
     """
     cfg = yaml.safe_load(DEFAULT.read_text())
     for p in ([path] if isinstance(path, (str, Path)) else (path or [])):
@@ -31,7 +31,7 @@ def load_config(path=None):
 def _resolve_mirror_limits(cfg):
     """`left: mirror` (hoặc `right: mirror`) trong safety.soft_limits_deg / robot.motor_limits_deg: tay đó lấy giới hạn
     của tay kia qua phép phản chiếu (mapping.arm.MIRROR_SIGNS). Tính SAU khi đã ghép mọi file config, nên đổi giới hạn
-    tay phải ở file nào (first_real, wrist_real_30...) thì tay trái cũng đổi theo đúng như vậy."""
+    tay phải ở file nào (first_real, real...) thì tay trái cũng đổi theo đúng như vậy."""
     from openarm_shadow.mapping.arm import mirror_limits_deg
     for sec, key in (("safety", "soft_limits_deg"), ("robot", "motor_limits_deg")):
         lims = (cfg.get(sec) or {}).get(key)

@@ -94,7 +94,7 @@ def load_calibration(path, names):
     p = Path(path)
     if not p.is_file():
         raise SystemExit(f"Chưa có file hiệu chuẩn camera {p}.\n"
-                         "Chạy: python scripts/calibrate_cameras.py --config config/fusion_2cam.yaml")
+                         "Chạy: python scripts/calibrate_cameras.py --config config/fusion_3cam.yaml")
     data = yaml.safe_load(p.read_text())
     cams = []
     for n in names:

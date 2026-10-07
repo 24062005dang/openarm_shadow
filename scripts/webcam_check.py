@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Kiểm tra độ nét webcam: chế độ thật đang chạy (độ phân giải, định dạng, fps) + điểm nét, để so các cách chỉnh.
 
-    python scripts/webcam_check.py --config config/fusion_2cam.yaml          # webcam = camera 'front'
+    python scripts/webcam_check.py --config config/fusion_3cam.yaml          # webcam = camera 'front'
     python scripts/webcam_check.py --source 0 --width 1280 --height 720 --fourcc MJPG
 
 Điểm nét = phương sai Laplacian ở giữa ảnh (cao hơn = nét hơn). Chỉ so sánh được khi cùng cảnh, cùng khoảng

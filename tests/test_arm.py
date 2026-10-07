@@ -145,13 +145,55 @@ def test_mirror_mode_equals_sign_flipped_right_arm():
 
 
 def test_left_limits_mirror_right_after_config_merge():
-    """both_arms_real.yaml: left: mirror -> giới hạn tay trái = ảnh gương giới hạn tay phải của config đang ghép."""
+    """real.yaml: left: mirror -> giới hạn tay trái = ảnh gương giới hạn tay phải của config đang ghép."""
     from openarm_shadow.mapping.arm import mirror_limits_deg
-    full = load_config(["config/wrist_real_30.yaml", "config/gripper_real.yaml", "config/both_arms_real.yaml"])
+    full = load_config(["config/real.yaml"])
     lim = full["safety"]["soft_limits_deg"]
     assert lim["left"] == mirror_limits_deg(lim["right"])
-    assert lim["left"] == [[-75, 75], [-90, 9], [-85, 85], [0, 135], [-85, 85], [-40, 40], [-80, 80]]
+    assert lim["left"] == [[-75, 75], [-170, 9], [-85, 85], [0, 135], [-85, 85], [-40, 40], [-80, 80]]
     assert lim["left"] == full["robot"]["motor_limits_deg"]["left"]          # trùng chốt chặn motor tay trái
-    first = load_config(["config/first_real.yaml", "config/both_arms_real.yaml"])["safety"]["soft_limits_deg"]
+    first = load_config(["config/real.yaml", "config/first_real.yaml"])["safety"]["soft_limits_deg"]
     assert first["left"] == [[-45, 10], [-45, 0], [-30, 30], [0, 90], [0, 0], [0, 0], [0, 0]]   # J1-J4 nhỏ như phải
     assert mirror_limits_deg(mirror_limits_deg(lim["right"])) == [[float(a), float(b)] for a, b in lim["right"]]
+
+
+def test_real_profile_is_the_tested_real_robot_setup():
+    """config/real.yaml = cấu hình đã chạy ổn 07/10: hai tay, bù trọng lực (scale 0,5-0,75), tốc độ 45-90°/s + velocity_tracking
+    (không feedforward), J2 tới 170°. default.yaml vẫn giữ chốt motor J2 90° và không bù trọng lực."""
+    cfg = load_config(["config/real.yaml", "config/fusion_3cam.yaml"])
+    s, r = cfg["safety"], cfg["robot"]
+    assert cfg["mapping"]["robot_arms"] == ["right", "left"]
+    assert s["max_vel_deg_s"] == [45, 45, 60, 60, 90, 90, 90]
+    assert s["velocity_tracking"]["enabled"] and not s["velocity_tracking"]["feedforward"]
+    assert r["kp"][4:] == [15, 15, 15] and r["kd"][:4] == [2.75, 2.5, 2.0, 2.0]
+    assert r["gravity_comp"]["enabled"] and 0.5 <= r["gravity_comp"]["scale"] <= 1.0
+    for sec, key in (("safety", "soft_limits_deg"), ("robot", "motor_limits_deg")):
+        assert cfg[sec][key]["right"][1] == [-9, 170] and list(cfg[sec][key]["left"][1]) == [-170, 9]
+    assert r["gripper"]["enabled"] and r["gripper"]["left"]["enabled"]
+    base = load_config()
+    assert base["robot"]["motor_limits_deg"]["right"][1] == [-9, 90] and not base["robot"]["gravity_comp"]["enabled"]
+
+
+def test_gravity_model_matches_mujoco_sign():
+    """Mô-men Pinocchio (URDF trong real.yaml) cùng dấu / gần MJCF (tay phải và ảnh gương tay trái)."""
+    pytest.importorskip("pinocchio")
+    mujoco = pytest.importorskip("mujoco")
+    from openarm_shadow.robot.gravity import GravityModel
+    from pathlib import Path
+    urdf = Path(load_config(["config/real.yaml"])["robot"]["gravity_comp"]["urdf"]).expanduser()
+    if not urdf.exists():
+        pytest.skip("không có URDF v1.0")
+    g = GravityModel(urdf, ["right", "left"])
+    q = np.deg2rad([-60, 10, 0, 90, 0, 0, 0])
+    qm = q * np.array([-1, -1, -1, 1, -1, -1, -1])
+    tau = g.torques({"right": q, "left": qm})
+    m = mujoco.MjModel.from_xml_path("openarm_mujoco/v1/scene.xml")
+    d = mujoco.MjData(m)
+    for s, qq in (("right", q), ("left", qm)):
+        for i in range(7):
+            d.qpos[m.jnt_qposadr[m.joint(f"openarm_{s}_joint{i + 1}").id]] = qq[i]
+    mujoco.mj_forward(m, d)
+    for s in ("right", "left"):
+        bias = np.array([d.qfrc_bias[m.jnt_dofadr[m.joint(f"openarm_{s}_joint{i + 1}").id]] for i in range(7)])
+        assert np.max(np.abs(bias - tau[s])) < 0.5
+        assert np.sign(tau[s][0]) == np.sign(bias[0]) and abs(tau[s][0]) > 3

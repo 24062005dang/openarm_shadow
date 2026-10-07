@@ -1,13 +1,13 @@
 # Fusion nhiều camera (2 camera, 3 camera)
 
-Hai cấu hình đang dùng:
+Cấu hình đang dùng (duy nhất): **3 camera, 2 tay, 2 camera có depth**.
 
 | Config | Camera | Dùng cho |
 | --- | --- | --- |
-| `config/fusion_2cam.yaml` | **webcam laptop trực diện** (camera 0, khung tham chiếu, không depth) + **D435i lệch 45°** | 1 tay (phải) |
-| `config/fusion_3cam_rs.yaml` | **webcam laptop ở giữa** + **D455 lệch 45° phía tay phải** + **D435i lệch 45° phía tay trái** | 2 tay, máy RTX 3050 |
+| `config/fusion_3cam.yaml` | **webcam laptop ở giữa** (camera 0, khung tham chiếu, không depth) + **D455 lệch 45° phía tay phải** + **D435i lệch 45° phía tay trái** | 2 tay, máy RTX 3050 |
 
-Lệnh chạy 3 camera: mục [Fusion 3 camera](#fusion-3-camera-webcam--d455--d435i). Các bước dưới đây viết cho 2 camera.
+Lệnh chạy: mục [Fusion 3 camera](#fusion-3-camera-webcam--d455--d435i). Các mục "Lấy gì từ đâu", "Đặt camera",
+"Webcam laptop mờ", "Độ trễ" bên dưới dùng chung (một số ví dụ viết cho cấu hình 2 camera cũ, đã bỏ file config).
 
 Chạy `--source multi`: mỗi camera chạy MediaPipe Pose + Hand riêng, rồi các điểm vai, khuỷu, cổ tay và 21 điểm bàn tay
 được **triangulate** trong một khung chung (khung camera đầu tiên). Depth của RealSense là bằng chứng phụ để phân xử
@@ -57,14 +57,14 @@ khớp nhau.
 ## Webcam laptop mờ: làm nét
 
 Ảnh mờ thì MediaPipe đặt điểm lệch, nhất là 21 điểm bàn tay. Theo thứ tự, mỗi bước kiểm tra bằng
-`python scripts/webcam_check.py --config config/fusion_2cam.yaml` (điểm nét trong khung vàng: cao hơn = nét hơn;
+`python scripts/webcam_check.py --config config/fusion_3cam.yaml` (điểm nét trong khung vàng: cao hơn = nét hơn;
 đặt bảng ChArUco cách webcam ~1,3 m và chỉ đổi một thứ mỗi lần):
 
 1. **Lau ống kính webcam** bằng khăn mềm. Vết vân tay là nguyên nhân mờ hay gặp nhất.
 2. **Độ phân giải là giới hạn phần cứng.** Webcam Latitude 5490 của nhóm (Integrated_Webcam_HD) chỉ có YUYV,
    tối đa 640x480 @ 30 fps (`v4l2-ctl -d /dev/video0 --list-formats-ext`), không có MJPG/720p. Bàn tay cách 1,3 m
    chỉ còn ~40 px. Webcam khác có MJPG 720p/1080p thì đặt `width/height`, `fourcc: MJPG` trong
-   `fusion_2cam.yaml`; chương trình thử nhiều thứ tự đặt và báo `Cảnh báo: webcam ... không chạy được` nếu không
+   `fusion_3cam.yaml`; chương trình thử nhiều thứ tự đặt và báo `Cảnh báo: webcam ... không chạy được` nếu không
    nhận.
 3. **Ánh sáng**: bật đủ đèn, chiếu vào người, không đứng ngược cửa sổ. Thiếu sáng -> webcam phơi sáng lâu -> tay
    cử động bị nhoè.
@@ -79,42 +79,9 @@ khớp nhau.
 **Đổi độ phân giải webcam thì phải hiệu chuẩn lại** (`calibrate_cameras.py` tự làm lại nội tham số khi độ phân giải
 khác; `shadow.py` dừng và báo nếu không khớp).
 
-## Các bước
-
-```bash
-source .venv/bin/activate
-
-# 1) Xem chỉ số webcam laptop (dòng có tên kiểu "Integrated_Webcam_HD") và D435i.
-#    Cắm D435i cũng tạo thêm /dev/video*, nên webcam laptop không chắc là 0: sửa `source:` của front nếu khác.
-#    Chỉ có 1 RealSense nên serial của side45 để trống được.
-python scripts/list_cameras.py
-
-# 2) In bảng ChArUco: in 100% (không "fit to page"), dán lên tấm phẳng cứng.
-#    ĐO LẠI cạnh 1 ô vuông bằng thước; khác 35 mm thì sửa fusion.board.square_m (và marker_m theo tỉ lệ).
-python scripts/make_charuco_board.py -o charuco_a4.png
-
-# 3) Hiệu chuẩn (1 lần, mỗi khi dời camera)
-python scripts/calibrate_cameras.py --config config/fusion_2cam.yaml
-
-# 4) Mô phỏng trước
-python scripts/shadow.py --source multi --arms right --config config/fusion_2cam.yaml
-
-# 5) Robot thật lần đầu với fusion (cổ tay khoá): first_real.yaml TRƯỚC, fusion_2cam.yaml SAU
-python scripts/shadow.py --source multi --robot openarm --arms right \
-    --config config/first_real.yaml --config config/fusion_2cam.yaml
-
-# 6) Mở cổ tay, bám nhanh (vẫn giữ giới hạn tốc độ, tăng tốc mềm, chặn bước nhảy):
-python scripts/shadow.py --source multi --robot openarm --arms right \
-    --config config/wrist_real_30.yaml --config config/fusion_2cam.yaml --config config/fusion_real_fast.yaml
-
-# 7) (tuỳ chọn) Bám theo vận tốc + gửi vận tốc xuống motor: thêm --config config/velocity_ff.yaml ở CUỐI.
-#    Đo trước/sau: thêm --record run.npz rồi
-python scripts/measure_lag.py run.npz
-```
-
 ## Fusion 3 camera (webcam + D455 + D435i)
 
-Config `config/fusion_3cam_rs.yaml`, file hiệu chuẩn riêng `config/cameras_calib_3cam_rs.yaml`. Mỗi tay luôn có
+Config `config/fusion_3cam.yaml`, file hiệu chuẩn riêng `config/cameras_calib_3cam_rs.yaml`. Mỗi tay luôn có
 camera trực diện + camera lệch cùng phía nhìn rõ. Cả 3 camera trễ thấp như nhau nên `sync: latest` (không chờ).
 
 | Camera | `name` | Nguồn | Vị trí |
@@ -131,52 +98,51 @@ cd ~/VR/openarm_shadow
 source .venv/bin/activate
 
 # 1) Kiểm tra camera: webcam phải là chỉ số 0, hai RealSense đúng serial trong config và đều báo USB 3.x.
-#    Webcam không phải 0 hoặc serial khác: sửa fusion.cameras trong config/fusion_3cam_rs.yaml.
+#    Webcam không phải 0 hoặc serial khác: sửa fusion.cameras trong config/fusion_3cam.yaml.
 python scripts/list_cameras.py
 
-# 2) In bảng ChArUco THEO CONFIG 3 CAMERA (ô 40 mm, khác bảng 35 mm của fusion_2cam), in 100%, dán lên tấm cứng.
+# 2) In bảng ChArUco THEO CONFIG 3 CAMERA (ô 40 mm), in 100%, dán lên tấm cứng.
 #    Đo lại cạnh 1 ô bằng thước; khác 40 mm thì sửa fusion.board.square_m (và marker_m theo tỉ lệ).
-python scripts/make_charuco_board.py --config config/fusion_3cam_rs.yaml -o charuco_3cam_a4.png
+python scripts/make_charuco_board.py --config config/fusion_3cam.yaml -o charuco_3cam_a4.png
 
 # 3) Hiệu chuẩn (1 lần, mỗi khi dời camera). Lần đầu / đổi độ phân giải webcam: thêm --redo-intrinsics
 #    (đo lại nội tham số webcam; RealSense tự đọc nội tham số). Cầm bảng đưa qua lại để cả 3 camera cùng thấy.
-python scripts/calibrate_cameras.py --config config/fusion_3cam_rs.yaml --redo-intrinsics
-python scripts/calibrate_cameras.py --config config/fusion_3cam_rs.yaml            # các lần sau
+python scripts/calibrate_cameras.py --config config/fusion_3cam.yaml --redo-intrinsics
+python scripts/calibrate_cameras.py --config config/fusion_3cam.yaml            # các lần sau
 
 # 4) (tuỳ chọn) Đo độ trễ từng camera so với webcam -> fusion.cameras[i].latency_s
-python scripts/measure_camera_latency.py --config config/fusion_3cam_rs.yaml
+python scripts/measure_camera_latency.py --config config/fusion_3cam.yaml
 
 # 5) Mô phỏng hình que (luôn chạy trước robot thật)
-python scripts/shadow.py --source multi --config config/fusion_3cam_rs.yaml                 # 2 tay
-python scripts/shadow.py --source multi --arms right --config config/fusion_3cam_rs.yaml    # chỉ tay phải
-python scripts/shadow.py --source multi --mode mirror --config config/fusion_3cam_rs.yaml   # soi gương
+python scripts/shadow.py --source multi --config config/fusion_3cam.yaml                 # 2 tay
+python scripts/shadow.py --source multi --arms right --config config/fusion_3cam.yaml    # chỉ tay phải
+python scripts/shadow.py --source multi --mode mirror --config config/fusion_3cam.yaml   # soi gương
 
 # 6) Mô phỏng MuJoCo OpenArm v1 (config/mujoco_sim.yaml luôn đặt CUỐI)
 python scripts/shadow.py --robot mujoco --source multi \
-    --config config/fusion_3cam_rs.yaml --config config/mujoco_sim.yaml
+    --config config/fusion_3cam.yaml --config config/mujoco_sim.yaml
 
 # 7) Ghi lại và chẩn đoán (thêm --record vào bất kỳ lệnh nào ở trên)
 python scripts/shadow.py --robot mujoco --source multi \
-    --config config/fusion_3cam_rs.yaml --config config/mujoco_sim.yaml --record run3.npz
+    --config config/fusion_3cam.yaml --config config/mujoco_sim.yaml --record run3.npz
 python scripts/find_jumps.py run3.npz                 # các lần khớp nhảy lớn + số camera thấy, sai số, depth
 python scripts/measure_lag.py run3.npz                # độ trễ mục tiêu -> lệnh -> góc đo
 python scripts/replay_npz.py run3.npz --robot mujoco --config config/mujoco_sim.yaml   # xem lại trong MuJoCo
 
-# 8) Robot thật, hai tay: DRY-RUN trước (motor tắt, chỉ đọc góc). Thứ tự config: tay phải + kẹp, hai tay, fusion.
+# 8) Robot thật, hai tay: DRY-RUN trước (motor tắt, chỉ đọc góc). config/real.yaml TRƯỚC, fusion SAU.
 python scripts/shadow.py --source multi --robot openarm --dry-run \
-    --config config/wrist_real_30.yaml --config config/gripper_real.yaml \
-    --config config/both_arms_real.yaml --config config/fusion_3cam_rs.yaml
+    --config config/real.yaml --config config/fusion_3cam.yaml
 
-# 9) Robot thật, hai tay (bỏ --dry-run khi dry-run đã đúng chiều mọi khớp tay trái; làm theo docs/SAFETY.md).
-#    Tay trái lượt đầu: J1-J4 biên độ nhỏ, cổ tay khoá (both_arms_real.yaml). Ổn rồi mới mở cổ tay tay trái:
-#    thêm --config config/both_arms_wrist_real.yaml NGAY SAU both_arms_real.yaml.
+# 9) Robot thật, hai tay (bỏ --dry-run khi dry-run đã đúng chiều mọi khớp; làm theo docs/SAFETY.md).
+#    real.yaml: kẹp, bù trọng lực, tốc độ 45-90°/s bám liên tục, J2 tới 170°. Tay trái = ảnh gương tay phải.
+#    Thận trọng: thêm --config config/first_real.yaml ở CUỐI (chỉ J1-J4 nhỏ, 20°/s).
+#    Tuỳ chọn: --config config/auto_engage_real.yaml ở CUỐI (tự đồng bộ sau khi READY 5 s).
 python scripts/shadow.py --source multi --robot openarm \
-    --config config/wrist_real_30.yaml --config config/gripper_real.yaml \
-    --config config/both_arms_real.yaml --config config/fusion_3cam_rs.yaml
+    --config config/real.yaml --config config/fusion_3cam.yaml
 
 # 10) Robot thật chỉ tay phải
 python scripts/shadow.py --source multi --robot openarm --arms right \
-    --config config/wrist_real_30.yaml --config config/gripper_real.yaml --config config/fusion_3cam_rs.yaml
+    --config config/real.yaml --config config/fusion_3cam.yaml
 ```
 
 Khi chạy (cửa sổ OpenCV):
@@ -206,17 +172,18 @@ Mô phỏng (camera 15 fps, giả định camera + nhận diện 120 ms) cho th�
 
 | Khâu | Trễ | Đã xử lý |
 | --- | --- | --- |
-| Bộ lọc One Euro J1-J4 (beta 0.02) | 130-200 ms | fusion_real_fast: beta 0.5 -> ~70 ms; Pose nhiễu lớn thì đứng yên rung hơn, hạ về 0.2 nếu cần |
-| Giới hạn tốc độ khi tay nhanh hơn giới hạn | rất lớn (vd 440 ms) | nâng dần trong fusion_real_fast.yaml |
+| Bộ lọc One Euro J1-J4 (beta 0.02) | 130-200 ms | Tăng `filter.beta` J1-J4 (0.5 -> ~70 ms); Pose nhiễu lớn thì đứng yên rung hơn, hạ về 0.2 nếu cần |
+| Giới hạn tốc độ khi tay nhanh hơn giới hạn | rất lớn (vd 440 ms) | nâng trần trong `config/real.yaml` (45-90°/s; real1: ở trần 20/30°/s robot đuổi ở trần 51% lúc chạy) |
 | SafetyGate kiểu cũ: lao tới mục tiêu rồi đứng chờ khung sau | ~1/2 khung + giật theo nhịp 15 Hz | `velocity_tracking`: chạy đều theo vận tốc mục tiêu, giới hạn gia tốc |
 | Motor nhận dq = 0: kd hãm chuyển động | kd/kp: ~70 ms cổ tay, ~40 ms J1 | `velocity_tracking.feedforward`: gửi vận tốc lệnh làm dq |
 
-`config/velocity_ff.yaml` bật hai mục cuối (mô phỏng cổ tay ±40° 0,3 Hz: trễ mục tiêu -> motor 110 -> ~0 ms, sai số
+`config/real.yaml` (robot thật) chỉ bật mục `velocity_tracking`, TẮT feedforward dq (real2 07/10: có dq thì
+robot rung qua lại nhiều hơn lệnh 2-5 lần). Bật cả hai mục (mô phỏng cổ tay ±40° 0,3 Hz: trễ mục tiêu -> motor 110 -> ~0 ms, sai số
 5,8 -> 1,9°). Mất người/tay thì thôi ngoại suy ngay (không trôi tiếp), đứng yên không rung hơn kiểu cũ.
 `--record run.npz` giờ ghi thêm lệnh và góc đo 100 Hz; `scripts/measure_lag.py run.npz` in trễ mục tiêu -> lệnh,
 lệnh -> đo, mục tiêu -> đo cho từng khớp, để kiểm chứng trên robot thật.
 
-## Chế độ nhẹ `body_source: front` (mặc định trong fusion_2cam.yaml)
+## Chế độ nhẹ `body_source: front` (code còn hỗ trợ, không còn config đi kèm)
 
 Học từ bản Openarm_Teleop của nhóm (chạy mượt trên robot thật), giữ nguyên các lớp an toàn:
 
@@ -230,9 +197,8 @@ Học từ bản Openarm_Teleop của nhóm (chạy mượt trên robot thật),
 | Hướng bàn tay | `OrientationFusion`: 3D (Kabsch) + hướng từ điểm world từng camera + lòng bàn tay từ depth; 2 giả thuyết chống lật; đổi hướng > 100° cần 3 khung, trong lúc chờ cổ tay đứng yên | Không nhận sai hướng; xoay nhanh vẫn bám (làm mượt thích ứng) |
 
 Không lấy từ bản kia: tắt giới hạn tốc độ (`velocity_limit_enabled: false`), `engage_blend_s: 0` (robot lao tới
-mục tiêu trong 1 nhịp khi engage) và tắt chặn bước nhảy. `config/fusion_real_fast.yaml` thay vào đó nâng giới
-hạn cổ tay lên 45°/s (J1-J4 30-40°/s), tăng tốc mềm 1 s, giữ bước nhảy 0,3 s. (Bản đầu để 90°/s / 0,15 s
-làm cổ tay tự xoay nhanh khi mất hướng tay - xem mục "Cổ tay tự xoay nhanh".)
+mục tiêu trong 1 nhịp khi engage) và tắt chặn bước nhảy; giới hạn tốc độ, tăng tốc mềm và bước nhảy giữ như
+default. (Bản đầu để cổ tay 90°/s / bước nhảy 0,15 s làm cổ tay tự xoay nhanh khi mất hướng tay - xem mục "Cổ tay tự xoay nhanh".)
 
 ### Hiệu chuẩn (bước 3)
 
@@ -320,7 +286,7 @@ hướng sai hoặc lật 180°, các nguồn mâu thuẫn → `HOLD`/`CONFLICT`
 1. `ACQUIRE` (trên): cổ tay không nhận hướng mới cho tới khi hướng ổn định nhiều khung.
 2. SafetyGate `resume_after_s` / `resume_blend_s`: khớp nào đứng yên > 0,3 s rồi chạy lại thì tăng tốc mềm riêng
    khớp đó trong 1 s (J1-J4 không bị ảnh hưởng khi chỉ cổ tay mất).
-3. `fusion_real_fast.yaml`: cổ tay 45°/s (trước 90), bước nhảy > 60° bị giữ 0,3 s.
+3. Robot thật (`real.yaml`): bước nhảy cổ tay > 60° bị giữ (mô phỏng 90°).
 
 Vẫn nên tránh tư thế mép tay chĩa thẳng vào cả hai camera: đặt camera phụ lệch 45-60° sao cho luôn có một camera
 nhìn được lòng/mu bàn tay. Thấy `ACQUIRE`/`HOLD` lặp lại ở một tư thế = tư thế đó không quan sát được, đừng điều
@@ -345,7 +311,7 @@ cả hai camera nhìn cạnh bàn tay, và chỉ chấp nhận cú xoay > 100° 
 ## Giới hạn và việc còn lại
 
 - **Chưa đo fps trên laptop thật với 2 camera.** MediaPipe chạy song song theo luồng, nhưng 2 × (Pose + Hand) trên
-  CPU có thể < 15 fps. Nếu chậm: trong `config/fusion_2cam.yaml` đổi `models.pose` sang
+  CPU có thể < 15 fps. Nếu chậm: trong `config/fusion_3cam.yaml` đổi `models.pose` sang
   `models/pose_landmarker_lite.task` (đã có sẵn sau `download_models.sh`).
 - Với đúng 2 camera, lỗi nằm **dọc đường epipolar** không phát hiện được bằng hình học (hai tia vẫn cắt nhau, chỉ
   sai độ sâu). Depth giúp được một phần (cờ `!`); camera thứ 3 mới giải quyết triệt để.

@@ -52,6 +52,7 @@ def palm_forward_hand(human_side):
 @dataclass
 class RetargetInfo:
     err_upper_deg: float = float("nan")
+    shoulder_singular: bool = False      # tay gần T-pose: J1 giữ (xem ArmRetargeter.sh_sing)
     err_fore_deg: float = float("nan")
     err_hand_deg: float = float("nan")
     elbow_straight: bool = False
@@ -61,8 +62,13 @@ class RetargetInfo:
 
 class ArmRetargeter:
     def __init__(self, kin: ArmKinematics, elbow_straight_deg: float = 12.0,
-                 q_neutral=None, hand_neutral=None):
+                 q_neutral=None, hand_neutral=None, shoulder_singular_deg=(5.0, 20.0)):
         self.kin = kin
+        # Tay sang ngang (T-pose, J2 ~ ±90°): cánh tay trên song song trục J1 -> J1 không xác định (J1 và J3 cùng trục),
+        # nhiễu hướng 3° làm J1 xoay 26-40° (J3 xoay ngược bù). Cánh tay trên cách trục J1 dưới [a0, a1] độ: J1 giữ dần
+        # giá trị cũ (a0: giữ hẳn, a1: theo hẳn nghiệm SP2, giữa: trộn smoothstep), J2 giải lại cho J1 đó; xoay quanh
+        # cánh tay (twist) do J3 nhận ở bước căn cẳng tay.
+        self.sh_sing = tuple(np.deg2rad(float(v)) for v in shoulder_singular_deg)
         self.elbow_straight = np.deg2rad(elbow_straight_deg)
         self.q_neutral = np.zeros(7) if q_neutral is None else np.asarray(q_neutral, float)
         self.set_hand_neutral(DEFAULT_HAND_NEUTRAL if hand_neutral is None else hand_neutral)
@@ -119,7 +125,21 @@ class ArmRetargeter:
         info = RetargetInfo()
 
         if u is not None:
-            q = self.align_axis(3, q, kin.limb_sign[3] * unit(u), q_prev)
+            v3 = kin.limb_sign[3] * unit(u)
+            q = self.align_axis(3, q, v3, q_prev)
+            a1_axis = kin.axis_world(np.zeros(7), 1)              # trục J1 cố định với thân robot
+            ang = angle_between(a1_axis, v3)
+            ang = min(ang, np.pi - ang)
+            a0, a1 = self.sh_sing
+            if ang < a1:
+                x = float(np.clip((ang - a0) / max(a1 - a0, 1e-9), 0.0, 1.0))
+                w = x * x * (3 - 2 * x)
+                q[0] = q_prev[0] + w * wrap(q[0] - q_prev[0])
+                j2, j3 = kin.joints[1], kin.joints[2]
+                target = j2.R_local.T @ kin.R0(q, 1).T @ v3
+                t, _ = sp1(j3.R_local @ j3.axis, target, j2.axis)
+                q[1] = self._pick([(q[0], t)], q_prev, 0, 1)[1]
+                info.shoulder_singular = True
         if l is not None and u is not None:
             info.elbow_bend_deg = float(np.rad2deg(angle_between(u, l)))
             if angle_between(u, l) < self.elbow_straight:

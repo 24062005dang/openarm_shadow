@@ -1,0 +1,83 @@
+# Robot OpenArm THẬT, hai tay (cấu hình đã chạy ổn 07/10: bù trọng lực, tốc độ cao, giơ tay quá vai). Đặt TRƯỚC fusion:
+#   ./tools/bringup/setup_can.sh                       # bật can0 (tay phải) + can1 (tay trái)
+#   python scripts/shadow.py --source multi --robot openarm --dry-run \
+#       --config config/real.yaml --config config/fusion_3cam.yaml      # motor TẮT: kiểm tra chiều khớp
+#   python scripts/shadow.py --source multi --robot openarm \
+#       --config config/real.yaml --config config/fusion_3cam.yaml      # chạy thật (gõ yes, E-stop trong tay)
+# Thêm --arms right để chỉ chạy tay phải; thêm config/auto_engage_real.yaml ở cuối để tự đồng bộ khi READY.
+# Lần đầu / sau khi sửa cơ khí: dùng config/first_real.yaml thay file này (chỉ J1-J4, chậm).
+# Cần: pip install pin (bù trọng lực) và URDF v1.0 ở robot.gravity_comp.urdf.
+
+filter:
+  # Cổ tay + kẹp lọc mạnh hơn (real4 07/10: robot bám đúng lệnh, rung đến từ nhiễu hướng bàn tay / đầu ngón của camera).
+  # Phát lại real3 + real4: rung lúc tay yên J5/J6/J7 -27/-37/-38%, kẹp -33%; đổi lại trễ +35-55 ms.
+  # Cũ: cổ tay min_cutoff 1.0, beta 0.8, deadband 2°; kẹp min_cutoff 1.5, deadband 0.
+  #           J1   J2   J3   J4   J5   J6   J7   kẹp
+  min_cutoff: [0.6, 0.6, 0.5, 0.6, 0.6, 0.6, 0.6, 1.0]
+  beta:       [0.02, 0.02, 0.02, 0.02, 0.3, 0.3, 0.3, 0.3]
+  deadband_deg: [1.5, 1.5, 2.5, 1.5, 3, 3, 3, 0.05]   # kẹp: đơn vị độ mở 0..1 (0.05 ~ 3° motor)
+  # Robot thật: cổ tay 60° (mô phỏng dùng 90°) để vẫn chặn hướng tay bị lật do nhận diện sai.
+  jump_deg:   [35, 35, 35, 35, 60, 60, 60, 35]
+
+orientation:
+  smoothing: 0.7
+  fast_smoothing: 0.95
+  fast_angle_deg: 45
+
+mapping:
+  robot_arms: [right, left]
+
+safety:
+  # Tốc độ + bám liên tục giữa 2 khung camera (~14 Hz). real1 06/10 ở trần 20/30°/s: lệnh ở trần 51% lúc chạy, robot
+  # không theo kịp. Nâng trần mà không bật velocity_tracking thì lệnh vụt tới rồi đứng chờ khung sau.
+  max_vel_deg_s: [45, 45, 60, 60, 90, 90, 90]
+  engage_blend_s: 3.0
+  resume_blend_s: 0.5        # khớp vừa giữ xong tăng tốc lại trong 0,5 s (1 s góp 100-300 ms trễ J1-J4 ở real1)
+  velocity_tracking:
+    enabled: true            # gain / ngoại suy / max_acc_deg_s2 theo config/default.yaml
+    # Feedforward dq TẮT: real2 07/10 bật thì robot rung qua lại nhiều hơn lệnh 2-5 lần (J1, J2, J6, J7); real3 tắt
+    # rung giảm rõ, trễ lệnh -> robot 63-94 ms.
+    feedforward: false
+  soft_limits_deg:
+    # J2 tới 170° (giơ tay quá vai; URDF / ROS cho tới 190°). Chưa có kiểm tra va chạm tay - đầu / khung robot.
+    # Tay trái = ảnh gương tay phải (mapping.arm.MIRROR_SIGNS; J1, J2 đảo dấu).
+    #        J1          J2          J3          J4          J5          J6          J7
+    right: [[-75, 75], [-9, 170], [-85, 85], [0, 135], [-85, 85], [-40, 40], [-80, 80]]
+    left: mirror
+
+robot:
+  park_vel_deg_s: 15
+  # Gain MIT motor (hai tay). Cổ tay J5-J7 tăng từ gain chính thức v1.0 (kp 10, kd 0.7/0.6/0.5) vì real5 07/10: lệnh
+  # cổ tay đã mượt nhưng robot còn lệch lệnh 3-4° và trượt quanh lệnh ~1 Hz (nghi gain mềm + ma sát + tải bàn tay).
+  # Tăng vừa phải, ĐANG THỬ: tự rung nhanh (> 5 Hz) ở cổ tay thì lùi về kp 10 / kd 0.7, 0.6, 0.5.
+  kp: [70, 70, 70, 60, 15, 15, 15]
+  kd: [2.75, 2.5, 2.0, 2.0, 0.9, 0.8, 0.7]
+  motor_limits_deg:          # chốt chặn cuối ở mức motor (default: J2 90° theo LeRobot)
+    right: [[-75, 75], [-9, 170], [-85, 85], [0, 135], [-85, 85], [-40, 40], [-80, 80]]
+    left: mirror
+  # Bù trọng lực (Pinocchio, URDF v1.0): feedforward mô-men theo tư thế lệnh, x scale, tăng dần cùng gain khi bật
+  # motor. So với MuJoCo: cùng dấu, thấp hơn ~7-10%. Chạy ổn 07/10 ở scale 0,5 (tay không võng khi giơ cao); 0,75 đang thử (real5: J6/J7 vẫn trượt quanh lệnh, nghi trọng lượng bàn tay + kẹp).
+  gravity_comp:
+    enabled: true
+    urdf: ~/VR/Open_Arm/openarm_description/assets/robot/openarm_v1.0/urdf/example/v1.urdf
+    scale: 0.75
+  urdf_to_motor:
+    right:
+      sign: [1, 1, 1, 1, 1, 1, 1]
+      # Đồng bộ với first_real.yaml (đo 01/10): J4 -3.0, J5-J7 = 0. Đo lại mỗi buổi (tools/bringup/read_joints.py).
+      offset_deg: [0, 0, 0, -3.0, 0, 0, 0]
+    left:
+      # Chiều đã kiểm chứng bằng dry-run 02/10, cả 7 khớp + kẹp đúng URDF.
+      sign: [1, 1, 1, 1, 1, 1, 1]
+      # 05/10: tay trái chạy lại openarm-can-zero-position-calibration -> zero motor mới. read_joints.py --iface can1
+      # ở tư thế nghỉ: J1 -0.8 J2 -0.3 J3 -0.5 J4 0.4 (tựa chặn) J5 2.8 J6 -2.6 J7 -0.0. J4 2.9 = 0.4 + 2.5: lệnh 0°
+      # không ép khuỷu vào chặn. J5/J6 đo lúc motor tắt: kiểm tra lại bằng dry-run.
+      offset_deg: [-0.8, -0.3, -0.5, 2.9, 2.8, -2.6, 0.0]
+  gripper:
+    # MECH_LIM_V1 gripper [-60, 0]. Tay trái: zero mới 05/10, mở hết cỡ -68.4° (chặn) -> dùng -60° như tay phải.
+    enabled: true
+    open_deg: -60
+    closed_deg: 0
+    kp: 5.0
+    kd: 0.1
+    left: {enabled: true, open_deg: -60.0, closed_deg: 0.0}

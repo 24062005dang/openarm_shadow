@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from openarm_shadow.filtering.filters import JointFilter, OneEuro
-from openarm_shadow.core.geometry import make_frame, rot, seg_seg_distance, sp1, sp2, unit
+from openarm_shadow.core.geometry import make_frame, rot, seg_seg_distance, sp1, sp2, unit, wrap
 from openarm_shadow.core.kinematics import ArmKinematics
 from openarm_shadow.mapping.retarget import ArmRetargeter, mirror_rotation, mirror_vector
 from openarm_shadow.safety.gate import SafetyGate
@@ -96,8 +96,31 @@ def test_retarget_roundtrip(side):
         l = kin.axis_world(q, 5) * kin.limb_sign[5]
         H = kin.R0(q, 7) @ rt.R_offset.T
         qs, info = rt.solve(u, l, H, q + rng.normal(0, 0.03, 7))
+        if info.shoulder_singular:        # gần T-pose: J1 giữ dần giá trị cũ, đổi lấy sai hướng cánh tay rất nhỏ
+            assert info.err_upper_deg < 2.0 and info.err_fore_deg < 2.0      # J3 nhận twist, có thể chạm giới hạn
+            continue
         assert info.err_upper_deg < 1e-4 and info.err_fore_deg < 1e-4 and info.err_hand_deg < 1e-3
         assert np.abs(qs - q).max() < 1e-6
+
+
+@pytest.mark.parametrize("side", ["right", "left"])
+def test_tpose_keeps_j1_stable(side):
+    """Giơ tay sang ngang qua T-pose rồi lên cao (nhiễu hướng ~3°): trước đây J1 lật sang nhánh J1 ~ 180° / J2 < 90°
+    (robot thật kẹp J1 ±75° -> không theo được) và nhảy tới 128°/khung. Giờ J1 ở gần 0, hướng cánh tay vẫn đúng."""
+    kin = ArmKinematics(side)
+    rt = ArmRetargeter(kin)
+    g = np.random.default_rng(1)
+    sg = 1 if side == "right" else -1
+    q_prev, j1, err = np.zeros(7), [], []
+    for a in list(range(0, 151, 3)) + list(range(150, -1, -3)):
+        qt = np.deg2rad([0, sg * a, 0, 60, 0, 0, 0])
+        u = kin.limb_sign[3] * kin.axis_world(qt, 3) + g.normal(0, 0.05, 3)
+        l = kin.limb_sign[5] * kin.axis_world(qt, 5) + g.normal(0, 0.05, 3)
+        q, info = rt.solve(u, l, None, q_prev)
+        j1.append(abs(np.rad2deg(wrap(q[0]))))
+        err.append(info.err_upper_deg)
+        q_prev = q
+    assert max(j1) < 30 and np.percentile(err, 95) < 8
 
 
 def test_human_neutral_gives_zero_pose():
@@ -176,8 +199,8 @@ def test_joint_filter_per_joint_jump():
     assert held[0] and not held[1]
 
 
-def test_wrist_fast_config_tracks_faster():
-    cfg = load_config(Path(__file__).resolve().parents[1] / "config" / "wrist_fast.yaml")
+def test_real_filter_tracks_wrist_faster():
+    cfg = load_config(Path(__file__).resolve().parents[1] / "config" / "real.yaml")
     base = load_config()["filter"]
     fast = cfg["filter"]
     mk = lambda fc: JointFilter(8, fc["min_cutoff"], fc["beta"], fc["deadband_deg"], fc["jump_deg"],
@@ -193,7 +216,6 @@ def test_wrist_fast_config_tracks_faster():
             out, _ = jf(x, np.ones(8), k / 11)
         lag[name] = 90 - np.rad2deg(out[6])
     assert lag["fast"] < 0.5 * lag["base"]
-    assert cfg["safety"]["max_vel_deg_s"][:4] == load_config()["safety"]["max_vel_deg_s"][:4]
 
 
 # ---------------- an toàn ----------------
@@ -305,3 +327,40 @@ def test_self_collision_off_by_default_for_handover():
     assert not load_config()["safety"]["self_collision"]["enabled"]
     g = make_gate()
     assert not g.col_on
+
+
+def _sine_14hz(cfg_files, dur=4.0):
+    """Mục tiêu J1 hình sin 0,5 Hz ±10° (đỉnh ~31°/s, dưới trần), chỉ cập nhật 14 Hz như camera; gate chạy 100 Hz.
+    -> (lệnh J1, tỉ lệ khoảng giữa 2 khung mà lệnh chạy tới rồi đứng chờ, dq cuối). Mục tiêu nhanh hơn trần thì
+    kiểu cũ luôn đuổi ở trần, không lộ ra chạy-rồi-chờ."""
+    from openarm_shadow.config import ROOT
+    cfg = load_config([ROOT / "config" / f for f in cfg_files])
+    g = SafetyGate({"right": ArmKinematics("right")}, cfg["safety"])
+    g.reset({"right": np.append(np.deg2rad([0, 20, 0, 60, 0, 0, 0]), 0.5)})
+    g.engage(-10.0)
+    tgt = lambda t: np.append(np.deg2rad([10 * np.sin(np.pi * t), 20, 0, 60, 0, 0, 0]), 0.5)
+    cmd, frames = [], []
+    for k in range(int(dur * 100)):
+        t = k * 0.01
+        if not frames or t - frames[-1] >= 1 / 14:
+            frames.append(t)
+            g.set_target({"right": tgt(t)}, t, t_frame=t)
+        cmd.append(g.step(0.01, t)["right"][0])
+    cmd = np.rad2deg(np.array(cmd))
+    hold = n = 0
+    for a, b in zip(frames[14:-1], frames[15:]):
+        k = np.arange(int(round(a * 100)), int(round(b * 100)))
+        h = len(k) // 2
+        d1, d2 = abs(cmd[k[h]] - cmd[k[0]]), abs(cmd[k[-1]] - cmd[k[h]])
+        if d1 + d2 > 0.5:
+            n += 1
+            hold += d2 < 0.2 * d1
+    return cmd, hold / max(n, 1), g.dq
+
+
+def test_real_profile_moves_continuously_between_camera_frames():
+    """config/real.yaml: lệnh chạy đều giữa 2 khung camera 14 Hz (velocity_tracking, dq = 0: feedforward tắt)."""
+    _, hold, dq = _sine_14hz(("real.yaml", "fusion_3cam.yaml"))
+    assert hold < 0.1 and all(np.allclose(v, 0) for v in dq.values())      # feedforward tắt: motor nhận dq = 0
+    _, hold_old, dq_old = _sine_14hz(("default.yaml",))      # kiểu cũ, trần 45-90: chạy vụt rồi đứng chờ khung sau
+    assert hold_old > 0.3 and dq_old is None

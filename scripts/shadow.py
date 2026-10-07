@@ -3,7 +3,7 @@
 
     python scripts/shadow.py                      # D455 RGB-D, robot mô phỏng
     python scripts/shadow.py --source 0           # webcam laptop (không có depth), robot mô phỏng
-    python scripts/shadow.py --source multi --config config/fusion_2cam.yaml   # 2 camera, fusion
+    python scripts/shadow.py --source multi --config config/fusion_3cam.yaml   # 3 camera, fusion
     python scripts/shadow.py --robot mujoco --config config/mujoco_sim.yaml    # robot MuJoCo 3D thay robot que
     python scripts/shadow.py --robot openarm --dry-run   # đọc robot thật, motor TẮT (kiểm tra chiều khớp)
     python scripts/shadow.py --robot openarm --config config/first_real.yaml --arms right   # lần chạy thật đầu

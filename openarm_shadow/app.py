@@ -197,12 +197,12 @@ def run(cfg, source, robot_kind="sim", record=None, show=True, dry_run=False):
                     log[f"fus_{s}"].append(fusion_row(fr, pipe.human_side_for(s)))
                     log[f"raw_{s}"].append(pipe.raw_targets[s])
                     log[f"held_{s}"].append(pipe.held[s].copy())
-                    # chẩn đoán kẹp: [r fusion, r nhỏ nhất các camera, số camera thấy bàn tay, đang chờ nhả]
+                    # chẩn đoán kẹp: [r dùng, r nhỏ nhất các camera, số camera thấy bàn tay, đang chờ nhả, r camera 1..3]
                     ob = fr.arms.get(pipe.human_side_for(s))
                     rv = [x for x in (getattr(ob, "grip_views", None) or []) if np.isfinite(x)]
                     log[f"grip_obs_{s}"].append([np.nan if ob is None or ob.grip is None else ob.grip,
                                                  min(rv) if rv else np.nan, len(rv),
-                                                 float(pipe.grip[s].releasing)])
+                                                 float(pipe.grip[s].releasing)] + (rv + [np.nan] * 3)[:3])
             now = time.monotonic()
             fps = 0.9 * fps + 0.1 / max(now - fps_t, 1e-3)
             fps_t = now

@@ -2,7 +2,7 @@
 """Hiệu chuẩn ngoại tham số các camera trong fusion.cameras bằng bảng ChArUco in ra giấy.
 
     python scripts/make_charuco_board.py -o charuco_a4.png     # in 100%, dán lên tấm phẳng, đo lại cạnh ô
-    python scripts/calibrate_cameras.py --config config/fusion_2cam.yaml
+    python scripts/calibrate_cameras.py --config config/fusion_3cam.yaml
 
 Cầm bảng trong vùng tay sẽ cử động, sao cho camera tham chiếu (camera đầu) và ít nhất 1 camera khác cùng thấy (3
 camera: hai camera hai bên không cần thấy cùng lúc). Đổi vị trí và góc nghiêng giữa các lần chụp (chương trình tự
@@ -49,7 +49,7 @@ def main():
     cfg = load_config(args.config)
     fc = cfg["fusion"]
     if len(fc["cameras"]) < 2:
-        raise SystemExit("fusion.cameras cần ít nhất 2 camera (xem config/fusion_2cam.yaml)")
+        raise SystemExit("fusion.cameras cần ít nhất 2 camera (xem config/fusion_3cam.yaml)")
     names = [c["name"] for c in fc["cameras"]]
     board, det = make_board(fc["board"])
     calib_path = Path(fc["calib_file"])

@@ -67,7 +67,8 @@ class Arm:
         self.mirrored = bool(mirrored)
         self.kin = ArmKinematics(side)
         rc = cfg["retarget"]
-        self.rt = ArmRetargeter(self.kin, rc["elbow_straight_deg"])
+        self.rt = ArmRetargeter(self.kin, rc["elbow_straight_deg"],
+                                 shoulder_singular_deg=rc.get("shoulder_singular_deg", (5.0, 20.0)))
         # hướng trung tính mặc định theo đúng bàn tay người điều khiển tay này
         Hn = default_hand_neutral(self.human_side)
         self.rt.set_hand_neutral(mirror_rotation(Hn) if self.mirrored else Hn)
