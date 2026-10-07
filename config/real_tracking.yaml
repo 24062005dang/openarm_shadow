@@ -1,0 +1,20 @@
+# Bám liên tục giữa các khung camera cho robot THẬT. Đặt CUỐI cùng (sau config robot thật / fusion):
+#   python scripts/shadow.py --source multi --robot openarm \
+#       --config config/wrist_real_30.yaml --config config/both_arms_real.yaml \
+#       --config config/fusion_3cam.yaml --config config/real_tracking.yaml --record real2.npz
+#
+# Kiểm chứng (phát lại mục tiêu của real1 06/10 qua SafetyGate, mục tiêu ~14 Hz):
+#   - trần 20/30°/s (wrist_real_30): lệnh ở trần 51% lúc chạy, lệch p90 5°, p99 45° -> robot không theo kịp,
+#     bật velocity_tracking ở trần này gần như không đổi gì;
+#   - nâng trần mà KHÔNG bật velocity_tracking: 35% khoảng giữa 2 khung lệnh chạy vụt tới rồi đứng chờ;
+#   - velocity_tracking + trần dưới đây: chạy liên tục (2%), ở trần ~2%, lệch p90 ~1,5°.
+# Mới kiểm bằng phát lại lệnh, CHƯA chạy trên robot thật: lần đầu người giữ E-stop, so ctl_meas với ctl_cmd trong log.
+safety:
+  max_vel_deg_s: [45, 45, 60, 60, 90, 90, 90]   # = config/default.yaml
+  resume_blend_s: 0.5        # khớp vừa giữ xong tăng tốc lại trong 0,5 s (1 s góp 100-300 ms trễ J1-J4 ở real1)
+  velocity_tracking:
+    enabled: true            # gain / ngoại suy / max_acc_deg_s2 theo config/default.yaml
+    # real2 07/10 (có feedforward): lệnh mượt hơn real1 nhưng robot rung qua lại NHIỀU HƠN lệnh 2-5 lần (J1, J2,
+    # J6, J7): dq đổi theo từng khung camera đẩy thêm mô-men kd*(dq - v). Tắt: motor nhận dq = 0, kd hãm dao động như
+    # real1; lệnh vẫn chạy liên tục giữa 2 khung. Đổi lại trễ thêm ~kd/kp (ước 40-70 ms, chưa đo trên robot).
+    feedforward: false

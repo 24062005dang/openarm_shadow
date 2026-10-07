@@ -305,3 +305,41 @@ def test_self_collision_off_by_default_for_handover():
     assert not load_config()["safety"]["self_collision"]["enabled"]
     g = make_gate()
     assert not g.col_on
+
+
+def _sine_14hz(cfg_files, dur=4.0):
+    """Mục tiêu J1 hình sin 0,5 Hz ±10° (đỉnh ~31°/s, dưới trần), chỉ cập nhật 14 Hz như camera; gate chạy 100 Hz.
+    -> (lệnh J1, tỉ lệ khoảng giữa 2 khung mà lệnh chạy tới rồi đứng chờ, dq cuối). Mục tiêu nhanh hơn trần thì
+    kiểu cũ luôn đuổi ở trần, không lộ ra chạy-rồi-chờ."""
+    from openarm_shadow.config import ROOT
+    cfg = load_config([ROOT / "config" / f for f in cfg_files])
+    g = SafetyGate({"right": ArmKinematics("right")}, cfg["safety"])
+    g.reset({"right": np.append(np.deg2rad([0, 20, 0, 60, 0, 0, 0]), 0.5)})
+    g.engage(-10.0)
+    tgt = lambda t: np.append(np.deg2rad([10 * np.sin(np.pi * t), 20, 0, 60, 0, 0, 0]), 0.5)
+    cmd, frames = [], []
+    for k in range(int(dur * 100)):
+        t = k * 0.01
+        if not frames or t - frames[-1] >= 1 / 14:
+            frames.append(t)
+            g.set_target({"right": tgt(t)}, t, t_frame=t)
+        cmd.append(g.step(0.01, t)["right"][0])
+    cmd = np.rad2deg(np.array(cmd))
+    hold = n = 0
+    for a, b in zip(frames[14:-1], frames[15:]):
+        k = np.arange(int(round(a * 100)), int(round(b * 100)))
+        h = len(k) // 2
+        d1, d2 = abs(cmd[k[h]] - cmd[k[0]]), abs(cmd[k[-1]] - cmd[k[h]])
+        if d1 + d2 > 0.5:
+            n += 1
+            hold += d2 < 0.2 * d1
+    return cmd, hold / max(n, 1), g.dq
+
+
+def test_real_tracking_profile_moves_continuously_between_camera_frames():
+    """config/real_tracking.yaml: lệnh chạy đều giữa 2 khung camera 14 Hz và gửi vận tốc feedforward (dq)."""
+    real = ("wrist_real_30.yaml", "both_arms_real.yaml", "fusion_3cam.yaml")
+    _, hold, dq = _sine_14hz(real + ("real_tracking.yaml",))
+    assert hold < 0.1 and dq is not None
+    _, hold_old, dq_old = _sine_14hz(("default.yaml",))      # kiểu cũ, trần 45-90: chạy vụt rồi đứng chờ khung sau
+    assert hold_old > 0.3 and dq_old is None
