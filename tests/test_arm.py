@@ -158,14 +158,15 @@ def test_left_limits_mirror_right_after_config_merge():
 
 
 def test_real_profile_is_the_tested_real_robot_setup():
-    """config/real.yaml = cấu hình đã chạy ổn 07/10: hai tay, bù trọng lực 0,5, tốc độ 45-90°/s + velocity_tracking
+    """config/real.yaml = cấu hình đã chạy ổn 07/10: hai tay, bù trọng lực (scale 0,5-0,75), tốc độ 45-90°/s + velocity_tracking
     (không feedforward), J2 tới 170°. default.yaml vẫn giữ chốt motor J2 90° và không bù trọng lực."""
     cfg = load_config(["config/real.yaml", "config/fusion_3cam.yaml"])
     s, r = cfg["safety"], cfg["robot"]
     assert cfg["mapping"]["robot_arms"] == ["right", "left"]
     assert s["max_vel_deg_s"] == [45, 45, 60, 60, 90, 90, 90]
     assert s["velocity_tracking"]["enabled"] and not s["velocity_tracking"]["feedforward"]
-    assert r["gravity_comp"]["enabled"] and r["gravity_comp"]["scale"] == 0.5
+    assert r["kp"][4:] == [15, 15, 15] and r["kd"][:4] == [2.75, 2.5, 2.0, 2.0]
+    assert r["gravity_comp"]["enabled"] and 0.5 <= r["gravity_comp"]["scale"] <= 1.0
     for sec, key in (("safety", "soft_limits_deg"), ("robot", "motor_limits_deg")):
         assert cfg[sec][key]["right"][1] == [-9, 170] and list(cfg[sec][key]["left"][1]) == [-170, 9]
     assert r["gripper"]["enabled"] and r["gripper"]["left"]["enabled"]

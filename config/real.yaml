@@ -9,10 +9,13 @@
 # Cần: pip install pin (bù trọng lực) và URDF v1.0 ở robot.gravity_comp.urdf.
 
 filter:
+  # Cổ tay + kẹp lọc mạnh hơn (real4 07/10: robot bám đúng lệnh, rung đến từ nhiễu hướng bàn tay / đầu ngón của camera).
+  # Phát lại real3 + real4: rung lúc tay yên J5/J6/J7 -27/-37/-38%, kẹp -33%; đổi lại trễ +35-55 ms.
+  # Cũ: cổ tay min_cutoff 1.0, beta 0.8, deadband 2°; kẹp min_cutoff 1.5, deadband 0.
   #           J1   J2   J3   J4   J5   J6   J7   kẹp
-  min_cutoff: [0.6, 0.6, 0.5, 0.6, 1.0, 1.0, 1.0, 1.5]
-  beta:       [0.02, 0.02, 0.02, 0.02, 0.8, 0.8, 0.8, 0.3]
-  deadband_deg: [1.5, 1.5, 2.5, 1.5, 2, 2, 2, 0]
+  min_cutoff: [0.6, 0.6, 0.5, 0.6, 0.6, 0.6, 0.6, 1.0]
+  beta:       [0.02, 0.02, 0.02, 0.02, 0.3, 0.3, 0.3, 0.3]
+  deadband_deg: [1.5, 1.5, 2.5, 1.5, 3, 3, 3, 0.05]   # kẹp: đơn vị độ mở 0..1 (0.05 ~ 3° motor)
   # Robot thật: cổ tay 60° (mô phỏng dùng 90°) để vẫn chặn hướng tay bị lật do nhận diện sai.
   jump_deg:   [35, 35, 35, 35, 60, 60, 60, 35]
 
@@ -44,15 +47,20 @@ safety:
 
 robot:
   park_vel_deg_s: 15
+  # Gain MIT motor (hai tay). Cổ tay J5-J7 tăng từ gain chính thức v1.0 (kp 10, kd 0.7/0.6/0.5) vì real5 07/10: lệnh
+  # cổ tay đã mượt nhưng robot còn lệch lệnh 3-4° và trượt quanh lệnh ~1 Hz (nghi gain mềm + ma sát + tải bàn tay).
+  # Tăng vừa phải, ĐANG THỬ: tự rung nhanh (> 5 Hz) ở cổ tay thì lùi về kp 10 / kd 0.7, 0.6, 0.5.
+  kp: [70, 70, 70, 60, 15, 15, 15]
+  kd: [2.75, 2.5, 2.0, 2.0, 0.9, 0.8, 0.7]
   motor_limits_deg:          # chốt chặn cuối ở mức motor (default: J2 90° theo LeRobot)
     right: [[-75, 75], [-9, 170], [-85, 85], [0, 135], [-85, 85], [-40, 40], [-80, 80]]
     left: mirror
   # Bù trọng lực (Pinocchio, URDF v1.0): feedforward mô-men theo tư thế lệnh, x scale, tăng dần cùng gain khi bật
-  # motor. So với MuJoCo: cùng dấu, thấp hơn ~7-10%. Đã chạy ổn 07/10 ở scale 0,5 (tay không võng khi giơ cao).
+  # motor. So với MuJoCo: cùng dấu, thấp hơn ~7-10%. Chạy ổn 07/10 ở scale 0,5 (tay không võng khi giơ cao); 0,75 đang thử (real5: J6/J7 vẫn trượt quanh lệnh, nghi trọng lượng bàn tay + kẹp).
   gravity_comp:
     enabled: true
     urdf: ~/VR/Open_Arm/openarm_description/assets/robot/openarm_v1.0/urdf/example/v1.urdf
-    scale: 0.5
+    scale: 0.75
   urdf_to_motor:
     right:
       sign: [1, 1, 1, 1, 1, 1, 1]
